@@ -1,0 +1,66 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [],
+  "mcp": {
+    "yt-transcript": {
+      "type": "local",
+      "command": ["npx", "-y", "yt-transcript-mcp"],
+      "enabled": true
+    },
+    "notebooklm": {
+      "type": "local",
+      "command": ["npx", "-y", "notebooklm-mcp@latest"],
+      "enabled": true,
+      "timeout": 30000
+    },
+    "figma-community": {
+      "type": "local",
+      "command": ["npx", "-y", "figma-developer-mcp", "--stdio"],
+      "enabled": true,
+      "timeout": 15000,
+      "environment": {
+        "FIGMA_API_KEY": "{env:FIGMA_API_KEY}",
+        "DO_NOT_TRACK": "1"
+      }
+    },
+    "canva": {
+      "type": "remote",
+      "url": "https://mcp.canva.com/mcp",
+      "enabled": true,
+      "oauth": {}
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "@playwright/mcp@latest"],
+      "enabled": true,
+      "timeout": 30000
+    },
+    "google-workspace": {
+      "type": "local",
+      "command": ["npx", "-y", "google_workspace_mcp"],
+      "enabled": true,
+      "timeout": 30000
+    },
+    "screenshot": {
+      "type": "local",
+      "command": ["npx", "-y", "screenshot-mcp"],
+      "enabled": true,
+      "timeout": 15000
+    },
+    "image-gen": {
+      "type": "local",
+      "command": ["npx", "-y", "@merlinrabens/image-gen-mcp"],
+      "enabled": true,
+      "timeout": 30000
+    },
+    "github": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github@latest"],
+      "enabled": true,
+      "timeout": 15000,
+      "environment": {
+        "GITHUB_TOKEN": "{env:GITHUB_TOKEN}"
+      }
+    }
+  }
+}

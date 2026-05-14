@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: #0a0a0b;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-bg text-text font-sans antialiased;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  #root {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-border-2; }
+
+  ::selection { background: rgba(139, 92, 246, 0.3); }
+}
+
+@layer components {
+  .prose-radclaw {
+    @apply text-text leading-relaxed;
+    font-size: 0.9375rem;
+    word-break: break-word;
+  }
+
+  .prose-radclaw > *:first-child { margin-top: 0; }
+  .prose-radclaw > *:last-child { margin-bottom: 0; }
+
+  .prose-radclaw p { @apply mb-4 last:mb-0 leading-relaxed; }
+  .prose-radclaw ul { @apply mb-4 pl-5 space-y-1.5 list-disc last:mb-0; }
+  .prose-radclaw ol { @apply mb-4 pl-5 space-y-1.5 list-decimal last:mb-0; }
+  .prose-radclaw li { @apply text-text leading-relaxed; }
+  .prose-radclaw li > p { @apply mb-1; }
+
+  .prose-radclaw h1 { @apply text-xl font-semibold text-text mb-3 mt-6 first:mt-0; }
+  .prose-radclaw h2 { @apply text-lg font-semibold text-text mb-2 mt-5 first:mt-0; }
+  .prose-radclaw h3 { @apply text-base font-semibold text-text mb-2 mt-4 first:mt-0; }
+  .prose-radclaw h4 { @apply text-sm font-semibold text-text mb-1 mt-3 first:mt-0; }
+
+  .prose-radclaw strong { @apply font-semibold text-text; }
+  .prose-radclaw em { @apply italic text-text; }
+
+  .prose-radclaw blockquote {
+    @apply border-l-[3px] border-accent/40 pl-4 text-text-2 italic my-4 rounded-sm;
+  }
+
+  .prose-radclaw a {
+    @apply text-accent underline underline-offset-2 hover:text-accent/80 transition-colors;
+  }
+
+  .prose-radclaw hr { @apply border-border my-6; }
+
+  .prose-radclaw table {
+    @apply w-full text-sm mb-4 border-collapse last:mb-0;
+  }
+  .prose-radclaw th {
+    @apply text-left font-semibold text-text-2 border-b border-border pb-2 pr-4;
+  }
+  .prose-radclaw td {
+    @apply py-1.5 pr-4 border-b border-border/50 text-text;
+  }
+
+  .prose-radclaw img {
+    @apply rounded-lg max-w-full my-3;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-top    { padding-top: env(safe-area-inset-top); }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "youtube-full": {
+      "source": "ZeroPointRepo/youtube-skills",
+      "sourceType": "github",
+      "skillPath": "skills/youtube-full/SKILL.md",
+      "computedHash": "d513921b8401a561796cf65797ad7a24796c87e24b4967a765be69ab41bd569e"
+    }
+  }
+}
