@@ -37,6 +37,13 @@ export interface MemoryEntry {
   entries: string[]
 }
 
+export interface BackendSession {
+  frontendId: string
+  opencodeId: string
+  messageCount: number
+  createdAt: number
+}
+
 export type View = "chat" | "sessions" | "admin" | "memory" | "settings"
 
 export interface ServerConfig {

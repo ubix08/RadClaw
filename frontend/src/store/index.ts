@@ -34,7 +34,7 @@ interface AppState {
   clearChat: () => void
   newSession: () => Promise<void>
   switchSession: (id: string) => void
-  deleteSession: (id: string) => void
+  deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => void
 
   getClient: () => ApiClient
@@ -54,11 +54,22 @@ function sessionTitle(messages: Message[]): string {
   return text.length < first.content.length ? text + "…" : text
 }
 
-function saveCurrentAsSession(get: () => AppState, set: (partial: Partial<AppState>) => void) {
+function saveCurrentAsSession(get: () => AppState, set: (partial: Partial<AppState>) => void, sessionId?: string) {
   const { messages, sessions } = get()
   if (messages.length === 0) return
-  const id = genId()
   const now = Date.now()
+
+  if (sessionId) {
+    const idx = sessions.findIndex((s) => s.id === sessionId)
+    if (idx !== -1) {
+      const updated = [...sessions]
+      updated[idx] = { ...updated[idx], messages: [...messages], updatedAt: now, title: sessionTitle(messages) }
+      set({ sessions: updated })
+      return
+    }
+  }
+
+  const id = genId()
   const s: ChatSession = {
     id,
     title: sessionTitle(messages),
@@ -108,9 +119,26 @@ export const useStore = create<AppState>()(
         const { settings, isLoading, abortCtrl, getClient } = get()
         if (isLoading) {
           abortCtrl?.abort()
-          set({ isLoading: false, abortCtrl: null })
-          if (!text.trim()) return // stop-only, no new message
-          // fall through to send new message
+          set((st) => ({
+            isLoading: false,
+            abortCtrl: null,
+            messages: st.messages.map((m) => m.streaming ? { ...m, streaming: false } : m),
+          }))
+          if (!text.trim()) return
+        }
+
+        let sid = get().activeSessionId
+        if (!sid) {
+          sid = genId()
+          const now = Date.now()
+          const s: ChatSession = {
+            id: sid,
+            title: "New chat",
+            messages: [],
+            createdAt: now,
+            updatedAt: now,
+          }
+          set({ activeSessionId: sid, sessions: [s, ...get().sessions].slice(0, 50) })
         }
 
         const userMsg: Message = { id: genId(), role: "user", content: text, ts: Date.now() }
@@ -126,15 +154,22 @@ export const useStore = create<AppState>()(
             messages: st.messages.map((m) => (m.id === asstId ? { ...m, ...patch } : m)),
           }))
 
+        const onDone = () => {
+          set((st) => ({
+            isLoading: false,
+            abortCtrl: null,
+            messages: st.messages.map((m) => m.id === asstId ? { ...m, streaming: false } : m),
+          }))
+          saveCurrentAsSession(get, set, get().activeSessionId!)
+        }
+
         if (settings.streamMode) {
           const ctrl = client.streamChat(
             text,
             settings.userID,
+            sid,
             (_chunk, accumulated) => patchLast({ content: accumulated }),
-            (reply) => {
-              patchLast({ content: reply, streaming: false })
-              set({ isLoading: false, abortCtrl: null })
-            },
+            () => onDone(),
             (msg, _accumulated) => {
               patchLast({ content: _accumulated || msg, streaming: false, error: true })
               set({ isLoading: false, abortCtrl: null })
@@ -143,11 +178,11 @@ export const useStore = create<AppState>()(
           set({ abortCtrl: ctrl })
         } else {
           try {
-            const { reply } = await client.chat(text, settings.userID)
+            const { reply } = await client.chat(text, settings.userID, sid)
             patchLast({ content: reply, streaming: false })
+            onDone()
           } catch (e) {
             patchLast({ content: (e as Error).message, streaming: false, error: true })
-          } finally {
             set({ isLoading: false, abortCtrl: null })
           }
         }
@@ -159,42 +194,41 @@ export const useStore = create<AppState>()(
       },
 
       async newSession() {
-        saveCurrentAsSession(get, set)
-        try {
-          await get().getClient().newSession()
-          get().clearChat()
-          set({ activeSessionId: null, error: null })
-        } catch (e) {
-          set({ error: `Failed to start new session: ${(e as Error).message}` })
-        }
+        const { activeSessionId } = get()
+        saveCurrentAsSession(get, set, activeSessionId ?? undefined)
+        get().clearChat()
+        set({ activeSessionId: null, error: null })
       },
 
       async switchSession(id: string) {
-        const { sessions, abortCtrl } = get()
+        const { sessions, abortCtrl, activeSessionId } = get()
         abortCtrl?.abort()
         const session = sessions.find((s) => s.id === id)
         if (!session) return
+        if (activeSessionId) {
+          saveCurrentAsSession(get, set, activeSessionId)
+        }
         set({
           messages: session.messages,
           activeSessionId: id,
           isLoading: false,
           abortCtrl: null,
         })
-        // Reset backend session context so new messages start fresh
-        try {
-          await get().getClient().newSession()
-        } catch {
-          // Silently ignore — backend session will be created on next ask
-        }
       },
 
-      deleteSession(id: string) {
+      async deleteSession(id: string) {
         const { sessions, activeSessionId } = get()
         set({
           sessions: sessions.filter((s) => s.id !== id),
           activeSessionId: activeSessionId === id ? null : activeSessionId,
           messages: activeSessionId === id ? [] : get().messages,
         })
+        // Clean up backend session mapping
+        try {
+          await get().getClient().deleteBackendSession(id)
+        } catch {
+          // Silently ignore — backend session may not exist
+        }
       },
 
       renameSession(id: string, title: string) {

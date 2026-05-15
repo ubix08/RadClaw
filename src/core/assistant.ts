@@ -11,6 +11,8 @@ type AssistantInput = {
   channel: "telegram" | "whatsapp" | "system"
   userID: string
   text: string
+  /** Optional frontend session ID for multi-session support */
+  frontendSessionId?: string
 }
 
 type AssistantOptions = {
@@ -297,7 +299,7 @@ export class AssistantCore {
   async ask(input: AssistantInput): Promise<string> {
     const startedAt = Date.now()
     const client = this.ensureClient()
-    const sessionID = await this.getOrCreateMainSession()
+    const sessionID = await this.resolveSessionID(input)
 
     if (input.channel === "telegram" || input.channel === "whatsapp") {
       await saveLastChannel(input.channel, input.userID)
@@ -312,6 +314,7 @@ export class AssistantCore {
         channel: input.channel,
         userID: input.userID,
         sessionID,
+        frontendSessionId: input.frontendSessionId,
         textLength: input.text.length,
         memoryContextLength: memoryContext.length,
       },
@@ -359,11 +362,17 @@ export class AssistantCore {
       assistantText = "I did not receive a model reply in time. Please check OpenCode provider auth/model setup."
     }
 
+    // Track message count for frontend sessions
+    if (input.frontendSessionId) {
+      await this.sessions.incrementMessageCount(input.frontendSessionId)
+    }
+
     this.logger.info(
       {
         channel: input.channel,
         userID: input.userID,
         sessionID,
+        frontendSessionId: input.frontendSessionId,
         durationMs: Date.now() - startedAt,
         usedMessagePolling,
         answerLength: assistantText.length,
@@ -528,6 +537,37 @@ export class AssistantCore {
     if (typeof this.runtime?.close === "function") {
       await this.runtime.close()
     }
+  }
+
+  // ── Frontend session management ────────────────────────────────────────
+
+  /** Resolve which OpenCode session to use for a given input. */
+  private async resolveSessionID(input: AssistantInput): Promise<string> {
+    if (input.frontendSessionId) {
+      return this.getOrCreateFrontendSession(input.frontendSessionId)
+    }
+    return this.getOrCreateMainSession()
+  }
+
+  /** Get or create an OpenCode session for a frontend session ID. */
+  async getOrCreateFrontendSession(frontendId: string): Promise<string> {
+    const existing = this.sessions.getFrontendSession(frontendId)
+    if (existing) return existing
+
+    const dir = this.projects.active()?.path
+    const opencodeId = await this.createSession(`frontend:${frontendId.slice(0, 20)}`, dir)
+    await this.sessions.setFrontendSession(frontendId, opencodeId)
+    return opencodeId
+  }
+
+  /** Remove a frontend session mapping and return whether it existed. */
+  async deleteFrontendSession(frontendId: string): Promise<boolean> {
+    return this.sessions.removeFrontendSession(frontendId)
+  }
+
+  /** List all frontend sessions with metadata (no message bodies). */
+  listFrontendSessions() {
+    return this.sessions.listFrontendSessions()
   }
 
   private async createSession(key: string, directory?: string): Promise<string> {

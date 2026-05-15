@@ -63,7 +63,7 @@ export function Sidebar() {
           <div className="flex-1 overflow-y-auto border-t border-border px-2 py-2">
             <p className="text-[11px] font-semibold text-text-3 uppercase tracking-wider px-3 pb-1.5">Recent sessions</p>
             <div className="space-y-0.5">
-              {sessions.slice(0, 10).map((s) => (
+              {[...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 10).map((s) => (
                 <button
                   key={s.id}
                   onClick={() => { switchSession(s.id); setView("chat") }}

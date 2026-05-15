@@ -159,12 +159,17 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
   /** POST /api/chat  → { reply, userID } */
   router.add("POST", "/api/chat", async (req) => {
     if (!authChat(req)) return apiErr("Unauthorized", 401)
-    let body: { text?: string; userID?: string }
+    let body: { text?: string; userID?: string; sessionID?: string }
     try { body = await req.json() } catch { return apiErr("Invalid JSON") }
     if (!body.text?.trim()) return apiErr("text is required")
     const userID = (body.userID ?? "web:anonymous").trim()
     try {
-      const reply = await assistant.ask({ channel: "system", userID, text: body.text.trim() })
+      const reply = await assistant.ask({
+        channel: "system",
+        userID,
+        text: body.text.trim(),
+        frontendSessionId: body.sessionID?.trim() || undefined,
+      })
       return json({ reply, userID })
     } catch (e) {
       logger.error({ e }, "api /chat error")
@@ -175,11 +180,12 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
   /** POST /api/chat/stream  → SSE: token* → done | error */
   router.add("POST", "/api/chat/stream", async (req) => {
     if (!authChat(req)) return apiErr("Unauthorized", 401)
-    let body: { text?: string; userID?: string }
+    let body: { text?: string; userID?: string; sessionID?: string }
     try { body = await req.json() } catch { return apiErr("Invalid JSON") }
     if (!body.text?.trim()) return apiErr("text is required")
-    const userID = (body.userID ?? "web:anonymous").trim()
-    const text   = body.text.trim()
+    const userID    = (body.userID ?? "web:anonymous").trim()
+    const text      = body.text.trim()
+    const sessionID = body.sessionID?.trim() || undefined
 
     const stream = new ReadableStream({
       async start(ctrl) {
@@ -188,8 +194,12 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
           ctrl.enqueue(enc.encode(sseFrame(evt, data)))
 
         try {
-          // AssistantCore is synchronous-reply — simulate streaming per word
-          const reply = await assistant.ask({ channel: "system", userID, text })
+          const reply = await assistant.ask({
+            channel: "system",
+            userID,
+            text,
+            frontendSessionId: sessionID,
+          })
           const words = reply.split(/(\s+)/)
           let buf = ""
           for (const w of words) {
@@ -445,6 +455,30 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
       return json({ result })
     } catch (e) {
       return apiErr((e as Error).message)
+    }
+  })
+
+  // ── sessions (frontend multi-session support) ─────────────────────────
+
+  /** GET /api/sessions  → { sessions: [{ frontendId, opencodeId, messageCount, createdAt }] } */
+  router.add("GET", "/api/sessions", async () => {
+    try {
+      return json({ sessions: assistant.listFrontendSessions() })
+    } catch (e) {
+      logger.error({ e }, "api GET /sessions error")
+      return apiErr("Internal error", 500)
+    }
+  })
+
+  /** DELETE /api/sessions/:id  → { removed: boolean } */
+  router.add("DELETE", "/api/sessions/:id", async (req, params) => {
+    if (!authAdmin(req)) return apiErr("Unauthorized", 401)
+    try {
+      const removed = await assistant.deleteFrontendSession(params.id)
+      return json({ removed })
+    } catch (e) {
+      logger.error({ e, id: params.id }, "api DELETE /sessions/:id error")
+      return apiErr("Internal error", 500)
     }
   })
 

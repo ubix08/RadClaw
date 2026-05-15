@@ -1,4 +1,4 @@
-import type { AdminStatus, HeartbeatStatus, MemoryEntry, ServerConfig, WhitelistData } from "../types"
+import type { AdminStatus, BackendSession, HeartbeatStatus, MemoryEntry, ServerConfig, WhitelistData } from "../types"
 
 export class ApiClient {
   private base: string
@@ -15,6 +15,18 @@ export class ApiClient {
     const h: Record<string, string> = { "Content-Type": "application/json" }
     if (key) h["Authorization"] = `Bearer ${key}`
     return h
+  }
+
+  private async del<T>(path: string, key: string): Promise<T> {
+    const res = await fetch(`${this.base}${path}`, {
+      method: "DELETE",
+      headers: this.headers(key),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error((err as { error?: string }).error ?? res.statusText)
+    }
+    return res.json()
   }
 
   private async post<T>(path: string, body: unknown, key: string): Promise<T> {
@@ -43,13 +55,14 @@ export class ApiClient {
 
   // ── chat ──────────────────────────────────────────────────────────────────
 
-  async chat(text: string, userID: string): Promise<{ reply: string; userID: string }> {
-    return this.post("/api/chat", { text, userID }, this.chatKey)
+  async chat(text: string, userID: string, sessionID?: string): Promise<{ reply: string; userID: string }> {
+    return this.post("/api/chat", { text, userID, sessionID }, this.chatKey)
   }
 
   streamChat(
     text: string,
     userID: string,
+    sessionID: string | undefined,
     onToken: (chunk: string, accumulated: string) => void,
     onDone: (reply: string) => void,
     onError: (msg: string, accumulated?: string) => void,
@@ -62,7 +75,7 @@ export class ApiClient {
         const res = await fetch(`${this.base}/api/chat/stream`, {
           method: "POST",
           headers: this.headers(this.chatKey),
-          body: JSON.stringify({ text, userID }),
+          body: JSON.stringify({ text, userID, sessionID }),
           signal: ctrl.signal,
         })
         if (!res.ok || !res.body) {
@@ -169,6 +182,16 @@ export class ApiClient {
 
   async getWhitelist(): Promise<WhitelistData> {
     return this.get("/api/whitelist", this.adminKey)
+  }
+
+  // ── sessions (frontend multi-session) ─────────────────────────────────
+
+  async listSessions(): Promise<{ sessions: BackendSession[] }> {
+    return this.get("/api/sessions", this.chatKey)
+  }
+
+  async deleteBackendSession(frontendId: string): Promise<{ removed: boolean }> {
+    return this.del(`/api/sessions/${encodeURIComponent(frontendId)}`, this.adminKey)
   }
 
   // ── config ────────────────────────────────────────────────────────────────
