@@ -172,7 +172,7 @@ Active project determines working directory for spawned sub-agents. Switching re
 
 /project <name> switches active project and starts fresh session.
 
-Projects in ~/projects/ are auto-discovered on startup.
+Projects in radclawHome/projects/ are auto-discovered on startup.
 
 ## VII. COMMUNICATION
 
@@ -268,7 +268,7 @@ task, read, write, edit, glob, grep, bash, skill, question, webfetch, websearch,
 |---|---|---|
 | OpenCode server | http://127.0.0.1:4096 | OPENCODE_SERVER_URL |
 | Workspace root | ~/.radclaw/ | RADCLAW_HOME |
-| Active projects | ~/projects/ | auto-discovered |
+| Active projects | ~/.radclaw/projects/ | auto-discovered |
 | Sub-agent CWD | active project path | set per spawn |
 | Skills location | /root/.claude/skills/ | server-scanned directory |
 
@@ -286,13 +286,14 @@ const HEARTBEAT_DEFAULT = `# HEARTBEAT.md
 
 export async function ensureScaffold(home: string): Promise<ScaffoldPaths> {
   const paths = resolvePaths(home)
-  const projectsDir = joinPath(process.env.HOME || "/root", "projects")
+  const projectsDir = joinPath(home, "projects")
 
   await mkdir(paths.root, { recursive: true })
   await mkdir(paths.workspace, { recursive: true })
   await mkdir(paths.memoryDir, { recursive: true })
   await mkdir(paths.outboxDir, { recursive: true })
   await mkdir(projectsDir, { recursive: true })
+  await mkdir(joinPath(home, "uploads"), { recursive: true })
 
   const files: Array<[string, string]> = [
     [paths.memoryFile, "# Memory\n"],

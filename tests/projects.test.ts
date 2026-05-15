@@ -10,7 +10,7 @@ describe("ProjectStore", () => {
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "radclaw-proj-"))
-    store = new ProjectStore(join(tmp, "projects.json"))
+    store = new ProjectStore(join(tmp, "projects.json"), tmp)
   })
 
   afterEach(() => {
@@ -92,7 +92,7 @@ describe("ProjectStore", () => {
     await store.init()
     await store.add("persisted", "/p")
     await store.setActive("persisted")
-    const store2 = new ProjectStore(join(tmp, "projects.json"))
+    const store2 = new ProjectStore(join(tmp, "projects.json"), tmp)
     await store2.init()
     expect(store2.list()).toHaveLength(1)
     expect(store2.active()?.name).toBe("persisted")
@@ -102,21 +102,17 @@ describe("ProjectStore", () => {
 describe("ProjectStore discovery", () => {
   let tmp: string
   let store: ProjectStore
-  let origHome: string | undefined
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "radclaw-proj-"))
-    store = new ProjectStore(join(tmp, "projects.json"))
-    origHome = process.env.HOME
-    process.env.HOME = tmp
+    store = new ProjectStore(join(tmp, "projects.json"), tmp)
   })
 
   afterEach(() => {
-    process.env.HOME = origHome
     try { rmSync(tmp, { recursive: true, force: true }) } catch {}
   })
 
-  it("discoverProjects finds new dirs in ~/projects/", async () => {
+  it("discovers new dirs in radclawHome/projects/", async () => {
     await store.init()
     mkdirSync(join(tmp, "projects", "my-project"), { recursive: true })
     const count = await store.discoverProjects()
@@ -124,7 +120,7 @@ describe("ProjectStore discovery", () => {
     expect(store.get("my-project")).toBeDefined()
   })
 
-  it("discoverProjects skips already registered", async () => {
+  it("skips already registered", async () => {
     await store.init()
     mkdirSync(join(tmp, "projects", "existing"), { recursive: true })
     await store.add("existing", join(tmp, "projects", "existing"))

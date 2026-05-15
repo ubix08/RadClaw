@@ -12,7 +12,8 @@ import { startHeartbeat } from "./scheduler/heartbeat"
 import { createLogger } from "./utils/logger"
 import { readJson } from "./utils/fs"
 
-process.env.OPENCODE_CONFIG_DIR ??= Bun.cwd
+import { defaultRadclawHome } from "./bootstrap"
+process.env.OPENCODE_CONFIG_DIR ??= defaultRadclawHome()
 
 async function detectFirstRun(home: string): Promise<boolean> {
   const paths = resolvePaths(home)
@@ -46,7 +47,7 @@ async function main() {
   const memory    = new MemoryStore(cfg.workspaceDir)
   const sessions  = new SessionStore(cfg.sessionsFile)
   const whitelist = new WhitelistStore(cfg.whitelistFile)
-  const projects  = new ProjectStore(cfg.projectsFile)
+  const projects  = new ProjectStore(cfg.projectsFile, cfg.radclawHome)
   const assistant = new AssistantCore(logger, memory, sessions, projects, {
     model: cfg.opencodeModel,
     serverUrl: cfg.opencodeServerUrl,
@@ -98,6 +99,7 @@ async function main() {
       chatKey:    cfg.apiChatKey,
       enableAuth: cfg.apiEnableAuth,
       corsOrigin: cfg.apiCorsOrigin,
+      uploadsDir: cfg.uploadsDir,
     }))
     logger.info({ port: cfg.apiPort }, "api channel enabled")
   }

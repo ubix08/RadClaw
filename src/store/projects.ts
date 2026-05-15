@@ -20,7 +20,10 @@ function defaultData(): ProjectData {
 export class ProjectStore {
   private data: ProjectData = defaultData()
 
-  constructor(private readonly filePath: string) {}
+  constructor(
+    private readonly filePath: string,
+    private readonly radclawHome: string,
+  ) {}
 
   async init(): Promise<void> {
     await ensureDir(dirname(this.filePath))
@@ -38,8 +41,7 @@ export class ProjectStore {
 
   /** Auto-discover projects from ~/projects/ and register unknown ones. Returns count of new projects. */
   async discoverProjects(): Promise<number> {
-    const home = process.env.HOME || "/root"
-    const projectsDir = resolvePath(home, "projects")
+    const projectsDir = resolvePath(this.radclawHome, "projects")
     try {
       await mkdir(projectsDir, { recursive: true })
       const entries = await readdir(projectsDir, { withFileTypes: true })

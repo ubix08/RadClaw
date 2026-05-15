@@ -50,6 +50,7 @@ export type ApiAdapterOptions = {
   chatKey?: string
   enableAuth?: boolean
   corsOrigin?: string
+  uploadsDir: string
 }
 
 // ── tiny router ───────────────────────────────────────────────────────────────
@@ -233,7 +234,7 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
     }
   })
 
-  const UPLOADS_DIR = joinPath(import.meta.dir, "..", "..", ".data", "uploads")
+  const UPLOADS_DIR = opts.uploadsDir
 
   const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"])
   const SPREADSHEET_EXTS = new Set([".csv", ".tsv", ".xls", ".xlsx", ".ods"])

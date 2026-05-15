@@ -1,13 +1,11 @@
 import { ensureDir, readText, writeText } from "./fs"
-import { dirname, joinPath, resolvePath } from "./path"
+import { dirname, resolvePath } from "./path"
+import { defaultRadclawHome } from "../bootstrap"
 
 export type EnvMap = Record<string, string>
 
-const REPO_ROOT = resolvePath(import.meta.dir, "..", "..")
-const ENV_FILE = resolvePath(REPO_ROOT, ".env")
-
 export function envFilePath(): string {
-  return ENV_FILE
+  return resolvePath(defaultRadclawHome(), ".env")
 }
 
 export function parseEnv(lines: string[]): EnvMap {
@@ -45,7 +43,7 @@ export function updateEnvLines(lines: string[], updates: EnvMap): string[] {
 
 export async function loadEnvFile(): Promise<string[]> {
   try {
-    const raw = await readText(ENV_FILE)
+    const raw = await readText(envFilePath())
     return raw.split(/\r?\n/)
   } catch {
     return []
@@ -53,8 +51,9 @@ export async function loadEnvFile(): Promise<string[]> {
 }
 
 export async function saveEnvFile(lines: string[]): Promise<void> {
-  await ensureDir(dirname(ENV_FILE))
-  await writeText(ENV_FILE, lines.join("\n").trimEnd() + "\n")
+  const f = envFilePath()
+  await ensureDir(dirname(f))
+  await writeText(f, lines.join("\n").trimEnd() + "\n")
 }
 
 export async function readEnv(): Promise<EnvMap> {

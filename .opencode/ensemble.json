@@ -1,0 +1,14 @@
+{
+  "mergeOnCleanup": true,
+  "stallThresholdMs": 300000,
+  "stallMinSteps": 5,
+  "stallTokenThreshold": 200,
+  "timeoutMs": 1800000,
+  "rateLimitCapacity": 10,
+  "dashboardPort": 4747,
+  "modelsByAgent": {
+    "explore": "anthropic/claude-sonnet-4-20250514",
+    "build": "anthropic/claude-sonnet-4-20250514"
+  },
+  "defaultModel": "anthropic/claude-sonnet-4-20250514"
+}

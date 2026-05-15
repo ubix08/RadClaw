@@ -23,6 +23,7 @@ export type AppConfig = {
   sessionsFile: string
   lastChannelFile: string
   outboxDir: string
+  uploadsDir: string
   // ── API channel ──────────────────────────
   enableApi: boolean
   apiHostname: string
@@ -95,6 +96,7 @@ export async function loadConfig(): Promise<AppConfig> {
     sessionsFile: resolvePath(home, "sessions.json"),
     lastChannelFile: resolvePath(home, "last-channel.json"),
     outboxDir: resolvePath(home, "outbox"),
+    uploadsDir: resolvePath(home, "uploads"),
     // ── API channel ──────────────────────────
     enableApi: envBool(Bun.env.ENABLE_API, true),
     apiHostname: Bun.env.API_HOSTNAME ?? "0.0.0.0",

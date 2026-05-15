@@ -1,0 +1,60 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e8]: 🐾
+        - generic [ref=e9]: RadClaw
+      - button [ref=e10] [cursor=pointer]:
+        - img [ref=e11]
+    - navigation [ref=e14]:
+      - button "Chat" [ref=e15] [cursor=pointer]:
+        - img [ref=e16]
+        - text: Chat
+      - button "Sessions" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+        - text: Sessions
+      - button "Admin" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - text: Admin
+      - button "Memory" [ref=e28] [cursor=pointer]:
+        - img [ref=e29]
+        - text: Memory
+      - button "Settings" [ref=e33] [cursor=pointer]:
+        - img [ref=e34]
+        - text: Settings
+    - generic [ref=e38]:
+      - img [ref=e39]
+      - generic [ref=e41]: Powered by OpenCode
+  - main [ref=e42]:
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - button [ref=e46] [cursor=pointer]:
+            - img [ref=e47]
+          - generic [ref=e49]: Chat
+        - generic [ref=e50]:
+          - button "Sessions" [ref=e51] [cursor=pointer]:
+            - img [ref=e52]
+          - button "Clear chat" [disabled] [ref=e55]:
+            - img [ref=e56]
+          - button "New session" [ref=e59] [cursor=pointer]:
+            - img [ref=e60]
+            - generic [ref=e61]: New session
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - generic [ref=e65]: 🐾
+          - heading "RadClaw" [level=2] [ref=e66]
+          - paragraph [ref=e67]: Autonomous agent powered by OpenCode. Ask anything — code, research, tasks.
+        - generic [ref=e68]:
+          - button "What can you help me with?" [ref=e69] [cursor=pointer]
+          - button "Summarize recent heartbeat tasks" [ref=e70] [cursor=pointer]
+          - button "Show me what's in my memory" [ref=e71] [cursor=pointer]
+          - button "Start a new coding session" [ref=e72] [cursor=pointer]
+      - generic [ref=e73]:
+        - generic [ref=e75]:
+          - button "Attach file" [ref=e76] [cursor=pointer]:
+            - img [ref=e77]
+          - textbox "Message RadClaw…" [ref=e79]
+          - button "Send (Enter)" [disabled] [ref=e80]:
+            - img [ref=e81]
+        - paragraph [ref=e83]: RadClaw can make mistakes. Verify important info.

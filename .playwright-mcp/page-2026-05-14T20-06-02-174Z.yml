@@ -1,0 +1,67 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e8]: 🐾
+        - generic [ref=e9]: RadClaw
+      - button [ref=e10] [cursor=pointer]:
+        - img [ref=e11]
+    - navigation [ref=e14]:
+      - button "Chat" [ref=e15] [cursor=pointer]:
+        - img [ref=e16]
+        - text: Chat
+      - button "Sessions" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+        - text: Sessions
+      - button "Admin" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - text: Admin
+      - button "Memory" [ref=e28] [cursor=pointer]:
+        - img [ref=e29]
+        - text: Memory
+      - button "Settings" [ref=e33] [cursor=pointer]:
+        - img [ref=e34]
+        - text: Settings
+    - generic [ref=e38]:
+      - img [ref=e39]
+      - generic [ref=e41]: Powered by OpenCode
+  - main [ref=e42]:
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - button [ref=e46] [cursor=pointer]:
+            - img [ref=e47]
+          - generic [ref=e49]: Chat
+        - generic [ref=e50]:
+          - button "Sessions" [ref=e51] [cursor=pointer]:
+            - img [ref=e52]
+          - button "Clear chat" [ref=e55] [cursor=pointer]:
+            - img [ref=e56]
+          - button "New session" [ref=e59] [cursor=pointer]:
+            - img [ref=e60]
+            - generic [ref=e61]: New session
+      - generic [ref=e63]:
+        - generic [ref=e84]:
+          - generic [ref=e86]: U
+          - generic [ref=e87]:
+            - generic [ref=e88]: hello world
+            - generic [ref=e89]: 10:05 PM
+        - generic [ref=e90]:
+          - generic [ref=e92]: 🐾
+          - generic [ref=e93]:
+            - paragraph [ref=e96]: The user is saying "hello world" - a simple greeting. I should respond concisely. Hello!
+            - generic [ref=e97]: 10:05 PM
+      - generic [ref=e73]:
+        - generic [ref=e74]:
+          - generic [ref=e100]:
+            - img [ref=e101]
+            - generic [ref=e104]: AGENTS.md
+            - button [ref=e105] [cursor=pointer]:
+              - img [ref=e106]
+          - generic [ref=e75]:
+            - button "Attach file" [ref=e76] [cursor=pointer]:
+              - img [ref=e77]
+            - textbox "Add a message or press Enter to send…" [ref=e109]
+            - button "Send (Enter)" [ref=e80] [cursor=pointer]:
+              - img [ref=e98]
+        - paragraph [ref=e83]: RadClaw can make mistakes. Verify important info.
