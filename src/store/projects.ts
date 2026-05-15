@@ -13,13 +13,12 @@ type ProjectData = {
   activeName: string | null
 }
 
-const DEFAULT_DATA: ProjectData = {
-  projects: [],
-  activeName: null,
+function defaultData(): ProjectData {
+  return { projects: [], activeName: null }
 }
 
 export class ProjectStore {
-  private data: ProjectData = { ...DEFAULT_DATA }
+  private data: ProjectData = defaultData()
 
   constructor(private readonly filePath: string) {}
 
@@ -32,7 +31,7 @@ export class ProjectStore {
         activeName: typeof parsed.activeName === "string" ? parsed.activeName : null,
       }
     } catch {
-      this.data = { ...DEFAULT_DATA }
+      this.data = defaultData()
     }
     await this.persist()
   }
