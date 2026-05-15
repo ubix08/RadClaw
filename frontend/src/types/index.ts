@@ -1,9 +1,16 @@
 export type Role = "user" | "assistant" | "system"
 
+export type MessagePart =
+  | { type: "text"; text: string }
+  | { type: "thinking"; text: string }
+  | { type: "tool_use"; name: string; input: unknown; id?: string }
+  | { type: "tool_result"; text: string; tool_use_id?: string }
+
 export interface Message {
   id: string
   role: Role
   content: string
+  parts: MessagePart[]
   ts: number
   streaming?: boolean
   error?: boolean

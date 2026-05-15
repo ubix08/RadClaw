@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import type { ChatSession, Message, Settings, View } from "../types"
+import type { ChatSession, Message, MessagePart, Settings, View } from "../types"
 import { ApiClient } from "../lib/api"
 
 const DEFAULT_SETTINGS: Settings = {
@@ -52,6 +52,15 @@ function sessionTitle(messages: Message[]): string {
   if (!first) return "New chat"
   const text = first.content.slice(0, 60)
   return text.length < first.content.length ? text + "…" : text
+}
+
+function textFromParts(parts: MessagePart[]): string {
+  return parts
+    .filter((p): p is MessagePart & { text: string } =>
+      p.type === "text" || p.type === "tool_result"
+    )
+    .map((p) => p.text)
+    .join("")
 }
 
 function saveCurrentAsSession(get: () => AppState, set: (partial: Partial<AppState>) => void, sessionId?: string) {
@@ -141,24 +150,38 @@ export const useStore = create<AppState>()(
           set({ activeSessionId: sid, sessions: [s, ...get().sessions].slice(0, 50) })
         }
 
-        const userMsg: Message = { id: genId(), role: "user", content: text, ts: Date.now() }
+        const userMsg: Message = { id: genId(), role: "user", content: text, parts: [], ts: Date.now() }
         const asstId = genId()
-        const asstMsg: Message = { id: asstId, role: "assistant", content: "", ts: Date.now(), streaming: true }
+        const asstMsg: Message = { id: asstId, role: "assistant", content: "", parts: [], ts: Date.now(), streaming: true }
 
         set((st) => ({ messages: [...st.messages, userMsg, asstMsg], isLoading: true }))
 
         const client = getClient()
 
-        const patchLast = (patch: Partial<Message>) =>
-          set((st) => ({
-            messages: st.messages.map((m) => (m.id === asstId ? { ...m, ...patch } : m)),
-          }))
+        const patchParts = (part: MessagePart) =>
+          set((st) => {
+            const asst = st.messages.find((m) => m.id === asstId)
+            if (!asst) return st
+            const newParts = [...asst.parts, part]
+            const newContent = textFromParts(newParts)
+            return {
+              messages: st.messages.map((m) =>
+                m.id === asstId
+                  ? { ...m, parts: newParts, content: newContent }
+                  : m
+              ),
+            }
+          })
 
-        const onDone = () => {
+        const finishMessage = () => {
           set((st) => ({
             isLoading: false,
             abortCtrl: null,
-            messages: st.messages.map((m) => m.id === asstId ? { ...m, streaming: false } : m),
+            messages: st.messages.map((m) =>
+              m.id === asstId
+                ? { ...m, streaming: false }
+                : m
+            ),
           }))
           saveCurrentAsSession(get, set, get().activeSessionId!)
         }
@@ -168,22 +191,42 @@ export const useStore = create<AppState>()(
             text,
             settings.userID,
             sid,
-            (_chunk, accumulated) => patchLast({ content: accumulated }),
-            () => onDone(),
-            (msg, _accumulated) => {
-              patchLast({ content: _accumulated || msg, streaming: false, error: true })
-              set({ isLoading: false, abortCtrl: null })
+            patchParts,
+            () => finishMessage(),
+            (msg) => {
+              set((st) => ({
+                isLoading: false,
+                abortCtrl: null,
+                messages: st.messages.map((m) =>
+                  m.id === asstId
+                    ? { ...m, streaming: false, error: true, content: msg }
+                    : m
+                ),
+              }))
             },
           )
           set({ abortCtrl: ctrl })
         } else {
           try {
             const { reply } = await client.chat(text, settings.userID, sid)
-            patchLast({ content: reply, streaming: false })
-            onDone()
+            set((st) => ({
+              messages: st.messages.map((m) =>
+                m.id === asstId
+                  ? { ...m, content: reply, parts: [{ type: "text", text: reply }], streaming: false }
+                  : m
+              ),
+            }))
+            finishMessage()
           } catch (e) {
-            patchLast({ content: (e as Error).message, streaming: false, error: true })
-            set({ isLoading: false, abortCtrl: null })
+            set((st) => ({
+              isLoading: false,
+              abortCtrl: null,
+              messages: st.messages.map((m) =>
+                m.id === asstId
+                  ? { ...m, content: (e as Error).message, streaming: false, error: true }
+                  : m
+              ),
+            }))
           }
         }
       },
@@ -223,11 +266,10 @@ export const useStore = create<AppState>()(
           activeSessionId: activeSessionId === id ? null : activeSessionId,
           messages: activeSessionId === id ? [] : get().messages,
         })
-        // Clean up backend session mapping
         try {
           await get().getClient().deleteBackendSession(id)
         } catch {
-          // Silently ignore — backend session may not exist
+          // Silently ignore
         }
       },
 
@@ -244,17 +286,8 @@ export const useStore = create<AppState>()(
         settings: s.settings,
         sessions: s.sessions,
         activeSessionId: s.activeSessionId,
+        messages: s.messages,
       }),
-      onRehydrateStorage: () => (state) => {
-        if (!state) return
-        // Restore messages from active session on refresh
-        if (state.activeSessionId && state.messages.length === 0) {
-          const session = state.sessions.find((s) => s.id === state.activeSessionId)
-          if (session) {
-            state.messages = session.messages
-          }
-        }
-      },
     },
   ),
 )

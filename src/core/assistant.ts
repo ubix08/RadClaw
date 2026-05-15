@@ -11,9 +11,19 @@ type AssistantInput = {
   channel: "telegram" | "whatsapp" | "system"
   userID: string
   text: string
-  /** Optional frontend session ID for multi-session support */
   frontendSessionId?: string
 }
+
+export type StreamPart =
+  | { type: "text"; text: string }
+  | { type: "thinking"; text: string }
+  | { type: "tool_use"; name: string; input: unknown; id?: string }
+  | { type: "tool_result"; text: string; tool_use_id?: string }
+
+export type StreamEvent =
+  | StreamPart
+  | { type: "error"; message: string }
+  | { type: "done" }
 
 type AssistantOptions = {
   model?: string
@@ -381,6 +391,106 @@ export class AssistantCore {
     )
 
     return assistantText
+  }
+
+  async *askStream(input: AssistantInput): AsyncGenerator<StreamEvent, void, void> {
+    const client = this.ensureClient()
+    const sessionID = await this.resolveSessionID(input)
+
+    if (input.channel === "telegram" || input.channel === "whatsapp") {
+      await saveLastChannel(input.channel, input.userID)
+    }
+
+    const memoryContext = await this.memory.readAll()
+    const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects)
+
+    this.logger.info(
+      {
+        channel: input.channel,
+        userID: input.userID,
+        sessionID,
+        frontendSessionId: input.frontendSessionId,
+        textLength: input.text.length,
+      },
+      "assistant stream request started",
+    )
+
+    let response: unknown
+    try {
+      response = await sdkSessionPrompt(client, { id: sessionID }, {
+        noReply: false,
+        system: systemPrompt,
+        parts: [{ type: "text", text: input.text }],
+        ...(this.modelConfig ? { model: this.modelConfig } : {}),
+      })
+    } catch (error) {
+      this.logger.error({ error, sessionID }, "assistant stream prompt call failed")
+      yield { type: "error", message: (error as Error).message }
+      return
+    }
+
+    const payload = unwrap<Record<string, unknown>>(response)
+    const parts = payload.parts
+
+    let gotContent = false
+    if (parts && typeof parts === "object" && Symbol.asyncIterator in parts) {
+      try {
+        for await (const part of parts as AsyncIterable<Record<string, unknown>>) {
+          const ptype = part?.type
+          if (typeof ptype === "string") {
+            if (ptype === "text" || ptype === "thinking" || ptype === "tool_use" || ptype === "tool_result") {
+              gotContent = true
+              yield part as unknown as StreamEvent
+            } else if (part?.text) {
+              gotContent = true
+              yield { type: "text", text: part.text as string } as StreamEvent
+            }
+          }
+        }
+      } catch (e) {
+        this.logger.error({ error: e, sessionID }, "assistant stream part iteration error")
+        yield { type: "error", message: (e as Error).message }
+        return
+      }
+    }
+
+    if (!gotContent) {
+      const text = await extractPromptText(response)
+      if (text && text !== "I could not parse the assistant response.") {
+        yield { type: "text", text }
+      } else {
+        this.logger.warn({ sessionID }, "assistant stream response parse failed; polling messages")
+        let beforeAssistantSig = ""
+        try {
+          const beforeMessagesResult = await sdkSessionMessages(client, { id: sessionID })
+          beforeAssistantSig = assistantSignature(latestAssistantMessage(toMessages(beforeMessagesResult)))
+        } catch { /* ignore */ }
+        const waitedReply = await this.waitForAssistantReply(sessionID, beforeAssistantSig)
+        if (waitedReply) {
+          yield { type: "text", text: waitedReply }
+        } else {
+          yield { type: "error", message: "I did not receive a model reply in time. Please check OpenCode provider auth/model setup." }
+          return
+        }
+      }
+    }
+
+    if (input.frontendSessionId) {
+      await this.sessions.incrementMessageCount(input.frontendSessionId)
+    }
+
+    this.logger.info(
+      {
+        channel: input.channel,
+        userID: input.userID,
+        sessionID,
+        frontendSessionId: input.frontendSessionId,
+      },
+      "assistant stream request completed",
+    )
+
+    yield { type: "done" }
   }
 
   async startNewMainSession(reason = "manual"): Promise<string> {

@@ -1,4 +1,4 @@
-import type { AdminStatus, BackendSession, HeartbeatStatus, MemoryEntry, ServerConfig, WhitelistData } from "../types"
+import type { AdminStatus, BackendSession, HeartbeatStatus, MemoryEntry, MessagePart, ServerConfig, WhitelistData } from "../types"
 
 export class ApiClient {
   private base: string
@@ -63,14 +63,13 @@ export class ApiClient {
     text: string,
     userID: string,
     sessionID: string | undefined,
-    onToken: (chunk: string, accumulated: string) => void,
-    onDone: (reply: string) => void,
-    onError: (msg: string, accumulated?: string) => void,
+    onPart: (part: MessagePart) => void,
+    onDone: () => void,
+    onError: (msg: string) => void,
   ): AbortController {
     const ctrl = new AbortController()
 
     const run = async () => {
-      let accumulated = ""
       try {
         const res = await fetch(`${this.base}/api/chat/stream`, {
           method: "POST",
@@ -104,24 +103,28 @@ export class ApiClient {
             try {
               data = JSON.parse(dataLine.slice(5))
             } catch {
-              onError("Failed to parse server event", accumulated)
+              onError("Failed to parse server event")
               return
             }
 
-            if (event === "token") {
-              accumulated = data.accumulated as string
-              onToken(data.chunk as string, accumulated)
+            switch (event) {
+              case "text":
+              case "thinking":
+              case "tool_use":
+              case "tool_result":
+                onPart(data as MessagePart)
+                break
+              case "done":
+                onDone()
+                return
+              case "error":
+                onError((data.message as string) ?? "Server error")
+                return
             }
-            if (event === "done")  { onDone(data.reply as string); return }
-            if (event === "error") { onError(data.message as string, accumulated); return }
           }
         }
-
-        if (accumulated) {
-          onDone(accumulated)
-        }
       } catch (e) {
-        if ((e as Error).name !== "AbortError") onError((e as Error).message, accumulated)
+        if ((e as Error).name !== "AbortError") onError((e as Error).message)
       }
     }
 

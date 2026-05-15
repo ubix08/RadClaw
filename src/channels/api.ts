@@ -177,7 +177,7 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
     }
   })
 
-  /** POST /api/chat/stream  → SSE: token* → done | error */
+  /** POST /api/chat/stream  → SSE: text|thinking|tool_use|tool_result|done|error */
   router.add("POST", "/api/chat/stream", async (req) => {
     if (!authChat(req)) return apiErr("Unauthorized", 401)
     let body: { text?: string; userID?: string; sessionID?: string }
@@ -194,20 +194,20 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
           ctrl.enqueue(enc.encode(sseFrame(evt, data)))
 
         try {
-          const reply = await assistant.ask({
+          for await (const event of assistant.askStream({
             channel: "system",
             userID,
             text,
             frontendSessionId: sessionID,
-          })
-          const words = reply.split(/(\s+)/)
-          let buf = ""
-          for (const w of words) {
-            buf += w
-            emit("token", { chunk: w, accumulated: buf })
-            await new Promise(r => setTimeout(r, 8))
+          })) {
+            if (event.type === "done") {
+              emit("done", {})
+            } else if (event.type === "error") {
+              emit("error", { message: event.message })
+            } else {
+              emit(event.type, event)
+            }
           }
-          emit("done", { reply })
         } catch (e) {
           emit("error", { message: e instanceof Error ? e.message : "Internal error" })
         } finally {
@@ -231,7 +231,34 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
     }
   })
 
-  /** POST /api/chat/upload  → { name, text } — upload text/binary file, get extracted text */
+  const TEXT_EXTENSIONS = new Set([
+    ".txt", ".md", ".mdx",
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
+    ".py", ".rb", ".go", ".rs", ".java", ".kt", ".scala",
+    ".c", ".h", ".cpp", ".hpp", ".cs", ".swift",
+    ".json", ".yaml", ".yml", ".xml", ".toml", ".ini", ".cfg", ".conf",
+    ".csv", ".tsv",
+    ".html", ".css", ".scss", ".less", ".sass",
+    ".sh", ".bash", ".zsh", ".fish",
+    ".sql", ".r", ".lua", ".php", ".pl",
+    ".vim", ".env", ".gitignore", ".dockerfile",
+    ".graphql", ".gql", ".proto",
+    ".log", ".diff", ".patch",
+  ])
+
+  function isTextFile(name: string, buf: Uint8Array): boolean {
+    const ext = name.slice(name.lastIndexOf(".")).toLowerCase()
+    if (TEXT_EXTENSIONS.has(ext)) return true
+    if (buf.length === 0) return false
+    let nulls = 0
+    const limit = Math.min(buf.length, 4096)
+    for (let i = 0; i < limit; i++) {
+      if (buf[i] === 0) nulls++
+    }
+    return nulls / limit < 0.05
+  }
+
+  /** POST /api/chat/upload  → { name, text } — upload text file, reject binaries */
   router.add("POST", "/api/chat/upload", async (req) => {
     if (!authChat(req)) return apiErr("Unauthorized", 401)
     try {
@@ -241,9 +268,15 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
       const file = entry as File
       const name = file.name || "upload"
       const buf = await file.bytes()
-      const maxBytes = 500_000
-      if (buf.length > maxBytes) return apiErr(`File too large (max ${maxBytes} bytes)`)
-      const text = new TextDecoder("utf-8", { fatal: false }).decode(buf)
+      const maxBytes = 200_000
+      if (buf.length > maxBytes) return apiErr(`File too large (max ${(maxBytes / 1000).toFixed(0)} KB)`)
+      if (!isTextFile(name, buf)) {
+        return apiErr(`Unsupported file type. Only text files are accepted (${[...TEXT_EXTENSIONS].slice(0, 6).join(", ")}…)`)
+      }
+      const text = new TextDecoder("utf-8", { fatal: false }).decode(buf).trim()
+      if (!text) return apiErr("File appears to be empty")
+      const maxChars = 100_000
+      if (text.length > maxChars) return apiErr(`File text too long (max ${(maxChars / 1000).toFixed(0)}K characters)`)
       return json({ name, text, size: buf.length })
     } catch (e) {
       logger.error({ e }, "api POST /chat/upload error")

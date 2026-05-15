@@ -40,14 +40,33 @@ export function ChatInput() {
     }
   }
 
+  const TEXT_EXTENSIONS = [
+    ".txt", ".md", ".mdx",
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+    ".py", ".rb", ".go", ".rs", ".java", ".kt",
+    ".c", ".h", ".cpp", ".hpp", ".cs", ".swift",
+    ".json", ".yaml", ".yml", ".xml", ".toml", ".ini",
+    ".csv", ".tsv",
+    ".html", ".css", ".scss", ".less",
+    ".sh", ".bash", ".zsh",
+    ".sql", ".r", ".lua", ".php",
+    ".env", ".gitignore", ".dockerfile",
+    ".log", ".diff", ".patch",
+  ]
+
   const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase()
+    if (!TEXT_EXTENSIONS.includes(ext)) {
+      alert(`Unsupported file type "${ext}". Only text files are accepted (${TEXT_EXTENSIONS.slice(0, 6).join(", ")}…).`)
+      return
+    }
     setUploading(true)
     try {
-      const maxSize = 500_000
+      const maxSize = 200_000
       if (file.size > maxSize) {
-        alert(`File too large. Max ${maxSize / 1000} KB.`)
+        alert(`File too large. Max ${(maxSize / 1000).toFixed(0)} KB.`)
         return
       }
       const result = await getClient().uploadFile(file)
