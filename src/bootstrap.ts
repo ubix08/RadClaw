@@ -24,6 +24,7 @@ export type ScaffoldPaths = {
   outboxDir: string
   whatsappAuthDir: string
   agentsDir: string
+  skillsDir: string
 }
 
 export function resolvePaths(home: string): ScaffoldPaths {
@@ -46,6 +47,7 @@ export function resolvePaths(home: string): ScaffoldPaths {
     outboxDir: joinPath(home, "outbox"),
     whatsappAuthDir: joinPath(home, "whatsapp-auth"),
     agentsDir: joinPath(home, ".opencode", "agents"),
+    skillsDir: joinPath(home, "skills"),
   }
 }
 
@@ -131,7 +133,7 @@ Every task prompt MUST include: Task (clear description), Context (concision is 
 Rad ships with specialized sub-agents defined in ~/.radclaw/.opencode/agents/. Each .md file defines an agent with a system prompt and permissions. Use 'task' (synchronous) or 'delegate' (async background) to invoke them by name. The full list with descriptions is available in the "Available Specialist Agents" section of the system prompt.
 
 ### Skills
-Skills are installed globally on the OpenCode server and available to all agents via the native skill tool. When a sub-agent needs specialized instructions:
+Skills are loaded from ~/.radclaw/skills/ and available to all agents via the native skill tool. When a sub-agent needs specialized instructions:
 1. List available skills with app.skills() API
 2. Instruct the sub-agent to call skill(<name>) to load skill content into its context
 3. The skill tool injects the full SKILL.md content into the agent session
@@ -241,12 +243,12 @@ const TOOLS_DEFAULT = `# TOOLS.md — Rad Tool Reference
 
 ## Skills (OpenCode Native)
 
-Skills are globally installed on the server and loaded by agents at runtime via the skill tool.
+Skills are loaded automatically from ~/.radclaw/skills/ and other standard OpenCode locations.
 
-- **skill <name>** — Load skill instructions into current session. Call this from within any agent session.
+- **skill <name>** — Load skill instructions into current session.
 - **app.skills()** — List all available skills on the server (via SDK v2).
 
-Rad discovers skills via app.skills() and instructs sub-agents to load relevant skills using the skill tool.
+Rad manages skills in ~/.radclaw/skills/ — install new ones with the install_skill tool.
 
 ## File & Code Tools (OpenCode Native)
 
@@ -275,7 +277,9 @@ task, read, write, edit, glob, grep, bash, skill, question, webfetch, websearch,
 | Workspace root | ~/.radclaw/ | RADCLAW_HOME |
 | Active projects | ~/.radclaw/projects/ | auto-discovered |
 | Sub-agent CWD | active project path | set per spawn |
-| Skills location | /root/.claude/skills/ | server-scanned directory |
+| Skills location | ~/.radclaw/skills/ | RADCLAW_HOME/skills |
+| Custom agents | ~/.radclaw/.opencode/agents/ | RADCLAW_HOME/.opencode/agents |
+| MCP config | ~/.radclaw/opencode.json | OPENCODE_CONFIG_DIR |
 
 ## Channels
 
@@ -298,8 +302,16 @@ export async function ensureScaffold(home: string): Promise<ScaffoldPaths> {
   await mkdir(paths.memoryDir, { recursive: true })
   await mkdir(paths.outboxDir, { recursive: true })
   await mkdir(paths.agentsDir, { recursive: true })
+  await mkdir(paths.skillsDir, { recursive: true })
+  await mkdir(joinPath(home, ".opencode"), { recursive: true })
   await mkdir(projectsDir, { recursive: true })
   await mkdir(joinPath(home, "uploads"), { recursive: true })
+
+  const opencodeConfigPath = joinPath(home, "opencode.json")
+  let opencodeConfigExists = false
+  try { await writeFile(opencodeConfigPath, "x", { flag: "wx" }); opencodeConfigExists = false } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "EEXIST") opencodeConfigExists = true
+  }
 
   const files: Array<[string, string]> = [
     [paths.memoryFile, "# Memory\n"],
@@ -315,6 +327,24 @@ export async function ensureScaffold(home: string): Promise<ScaffoldPaths> {
     [paths.lastChannelFile, JSON.stringify({ channel: "telegram", userID: "", updatedAt: new Date().toISOString() }, null, 2)],
     [joinPath(home, "sources.json"), JSON.stringify({ sources: [] }, null, 2)],
   ]
+
+  if (!opencodeConfigExists) {
+    files.push([opencodeConfigPath, JSON.stringify({
+      $schema: "https://opencode.ai/config.json",
+      plugin: ["@hueyexe/opencode-ensemble@0.14.1"],
+      mcp: {
+        "yt-transcript": { type: "local", command: ["npx", "-y", "yt-transcript-mcp"], enabled: true },
+        "notebooklm": { type: "local", command: ["npx", "-y", "notebooklm-mcp@latest"], enabled: true, timeout: 30000 },
+        "figma-community": { type: "local", command: ["npx", "-y", "figma-developer-mcp", "--stdio"], enabled: true, timeout: 15000, environment: { FIGMA_API_KEY: "{env:FIGMA_API_KEY}", DO_NOT_TRACK: "1" } },
+        "canva": { type: "remote", url: "https://mcp.canva.com/mcp", enabled: true, oauth: {} },
+        "playwright": { type: "local", command: ["npx", "@playwright/mcp@latest"], enabled: true, timeout: 30000 },
+        "google-workspace": { type: "local", command: ["npx", "-y", "google_workspace_mcp"], enabled: true, timeout: 30000 },
+        "screenshot": { type: "local", command: ["npx", "-y", "screenshot-mcp"], enabled: true, timeout: 15000 },
+        "image-gen": { type: "local", command: ["npx", "-y", "@merlinrabens/image-gen-mcp"], enabled: true, timeout: 30000 },
+        "github": { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-github@latest"], enabled: true, timeout: 15000, environment: { GITHUB_TOKEN: "{env:GITHUB_TOKEN}" } },
+      },
+    }, null, 2)])
+  }
 
   for (const [file, content] of files) {
     try {

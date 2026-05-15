@@ -2,8 +2,7 @@ import { tool } from "@opencode-ai/plugin"
 import { joinPath, basename } from "./_util.js"
 import { join } from "path"
 
-// Skills are globally installed on the OpenCode server at the server's scanned path
-const SKILLS_DIR = join(process.env.HOME || "/root", ".claude", "skills")
+const SKILLS_DIR = join(process.env.RADCLAW_HOME || join(process.env.HOME || "/root", ".radclaw"), "skills")
 
 async function run(cmd) {
   const proc = Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" })
@@ -51,10 +50,10 @@ export default async ({ $ }) => {
           const targetDir = joinPath(SKILLS_DIR, targetName)
 
           if (await exists(targetDir)) {
-            return `Skill '${targetName}' already exists at .agents/skills/${targetName}`
+            return `Skill '${targetName}' already exists at ~/.radclaw/skills/${targetName}`
           }
 
-          const tmpDir = join(process.env.HOME || "/root", ".radclaw", `tmp-skill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+          const tmpDir = join(process.env.RADCLAW_HOME || join(process.env.HOME || "/root", ".radclaw"), `tmp-skill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
           try {
             await $`mkdir -p ${tmpDir}`
             // Sparse checkout keeps transfer focused on the requested skill folder.
@@ -72,7 +71,7 @@ export default async ({ $ }) => {
             await $`mkdir -p ${targetDir}`
             await $`cp -R ${srcDir}/. ${targetDir}`
 
-            return `Installed skill '${targetName}' to .agents/skills/${targetName}`
+            return `Installed skill '${targetName}' to ~/.radclaw/skills/${targetName}`
           } finally {
             await $`rm -rf ${tmpDir}`
           }
