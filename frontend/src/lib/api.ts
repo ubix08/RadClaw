@@ -1,4 +1,4 @@
-import type { AdminStatus, BackendSession, HeartbeatStatus, MemoryEntry, MessagePart, ServerConfig, WhitelistData } from "../types"
+import type { AdminStatus, BackendSession, HeartbeatStatus, MemoryEntry, MessagePart, ServerConfig, UploadResult, WhitelistData } from "../types"
 
 export class ApiClient {
   private base: string
@@ -136,7 +136,7 @@ export class ApiClient {
     return this.post("/api/chat/new", {}, this.chatKey)
   }
 
-  async uploadFile(file: File): Promise<{ name: string; text: string; size: number }> {
+  async uploadFile(file: File): Promise<UploadResult> {
     const form = new FormData()
     form.append("file", file)
     const h: Record<string, string> = {}

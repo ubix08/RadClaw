@@ -39,3 +39,8 @@ export async function removeFile(file: string): Promise<void> {
     // Ignore if file doesn't exist
   }
 }
+
+export async function writeBinary(file: string, data: Uint8Array): Promise<void> {
+  await ensureDir(dirname(file))
+  await writeFile(file, data)
+}

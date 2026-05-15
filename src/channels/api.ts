@@ -35,7 +35,9 @@ import type { AssistantCore } from "../core/assistant"
 import type { WhitelistStore } from "../core/whitelist-store"
 import type { MemoryStore } from "../memory/store"
 import { readEnv, writeEnv } from "../utils/env"
-import { readJson } from "../utils/fs"
+import { ensureDir, readJson, writeBinary } from "../utils/fs"
+import { dirname, joinPath } from "../utils/path"
+import { randomUUID } from "node:crypto"
 
 export type ApiAdapterOptions = {
   logger: Logger
@@ -231,34 +233,46 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
     }
   })
 
-  const TEXT_EXTENSIONS = new Set([
+  const UPLOADS_DIR = joinPath(import.meta.dir, "..", "..", ".data", "uploads")
+
+  const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"])
+  const SPREADSHEET_EXTS = new Set([".csv", ".tsv", ".xls", ".xlsx", ".ods"])
+  const TEXT_EXTS = new Set([
     ".txt", ".md", ".mdx",
     ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
     ".py", ".rb", ".go", ".rs", ".java", ".kt", ".scala",
     ".c", ".h", ".cpp", ".hpp", ".cs", ".swift",
     ".json", ".yaml", ".yml", ".xml", ".toml", ".ini", ".cfg", ".conf",
-    ".csv", ".tsv",
     ".html", ".css", ".scss", ".less", ".sass",
     ".sh", ".bash", ".zsh", ".fish",
     ".sql", ".r", ".lua", ".php", ".pl",
     ".vim", ".env", ".gitignore", ".dockerfile",
     ".graphql", ".gql", ".proto",
     ".log", ".diff", ".patch",
+    ".pdf",
   ])
 
-  function isTextFile(name: string, buf: Uint8Array): boolean {
-    const ext = name.slice(name.lastIndexOf(".")).toLowerCase()
-    if (TEXT_EXTENSIONS.has(ext)) return true
+  const ALLOWED_EXTS = new Set([...IMAGE_EXTS, ...SPREADSHEET_EXTS, ...TEXT_EXTS])
+
+  function isLikelyBinary(buf: Uint8Array): boolean {
     if (buf.length === 0) return false
-    let nulls = 0
     const limit = Math.min(buf.length, 4096)
+    let nulls = 0
     for (let i = 0; i < limit; i++) {
       if (buf[i] === 0) nulls++
     }
-    return nulls / limit < 0.05
+    return nulls / limit >= 0.05
   }
 
-  /** POST /api/chat/upload  → { name, text } — upload text file, reject binaries */
+  type UploadResult = {
+    name: string
+    size: number
+    type: "text" | "image" | "pdf" | "spreadsheet"
+    text: string
+    url?: string
+  }
+
+  /** POST /api/chat/upload  → { name, text, type, size, url? } */
   router.add("POST", "/api/chat/upload", async (req) => {
     if (!authChat(req)) return apiErr("Unauthorized", 401)
     try {
@@ -267,17 +281,93 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
       if (!entry || typeof entry === "string") return apiErr("file is required as multipart/form-data")
       const file = entry as File
       const name = file.name || "upload"
+      const ext = name.slice(name.lastIndexOf(".")).toLowerCase()
       const buf = await file.bytes()
-      const maxBytes = 200_000
-      if (buf.length > maxBytes) return apiErr(`File too large (max ${(maxBytes / 1000).toFixed(0)} KB)`)
-      if (!isTextFile(name, buf)) {
-        return apiErr(`Unsupported file type. Only text files are accepted (${[...TEXT_EXTENSIONS].slice(0, 6).join(", ")}…)`)
+
+      if (!ALLOWED_EXTS.has(ext) && ext.includes(".")) {
+        return apiErr(`Unsupported file type "${ext}". Allowed: text, markdown, code, PDF, images, CSV, spreadsheets.`)
+      }
+
+      const maxSize = ext === ".pdf" ? 10_000_000 : ext === ".xlsx" || ext === ".xls" ? 5_000_000 : 200_000
+      if (buf.length > maxSize) {
+        return apiErr(`File too large (max ${(maxSize / (1024 * 1024)).toFixed(1)} MB)`)
+      }
+
+      const result: UploadResult = { name, size: buf.length, type: "text", text: "" }
+
+      // ── Images ────────────────────────────────────────────────────────────
+      if (IMAGE_EXTS.has(ext)) {
+        const id = `${randomUUID().slice(0, 12)}${ext}`
+        const savePath = joinPath(UPLOADS_DIR, id)
+        await writeBinary(savePath, buf)
+        result.type = "image"
+        result.url = `/uploads/${id}`
+        result.text = `[Attached Image: ${name}](${result.url})`
+        return json(result)
+      }
+
+      // ── PDF ───────────────────────────────────────────────────────────────
+      if (ext === ".pdf") {
+        try {
+          const { PDFParse } = await import("pdf-parse")
+          const parser = new PDFParse(buf) as unknown as { getText: () => Promise<{ text: string }> }
+          const pdfResult = await parser.getText()
+          const pdfText = (pdfResult?.text ?? "").trim()
+          if (!pdfText) return apiErr("PDF appears to have no extractable text")
+          if (pdfText.length > 100_000) return apiErr("PDF text too long (max 100K characters)")
+          result.type = "pdf"
+          result.text = pdfText
+          return json(result)
+        } catch (e) {
+          logger.error({ error: e, name }, "PDF parse failed")
+          return apiErr("Could not parse PDF. The file may be scanned/encrypted.")
+        }
+      }
+
+      // ── Spreadsheets (XLSX/XLS) ───────────────────────────────────────────
+      if (ext === ".xlsx" || ext === ".xls") {
+        try {
+          const XLSX = await import("xlsx")
+          const wb = XLSX.read(buf, { type: "buffer" })
+          const lines: string[] = []
+          for (const sheetName of wb.SheetNames) {
+            const sheet = wb.Sheets[sheetName]
+            const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false })
+            if (csv.trim()) {
+              lines.push(`--- ${sheetName} ---`, csv)
+            }
+          }
+          const text = lines.join("\n").trim()
+          if (!text) return apiErr("Spreadsheet appears to be empty")
+          if (text.length > 100_000) return apiErr("Spreadsheet text too long (max 100K characters)")
+          result.type = "spreadsheet"
+          result.text = text
+          return json(result)
+        } catch (e) {
+          logger.error({ error: e, name }, "Spreadsheet parse failed")
+          return apiErr("Could not parse spreadsheet.")
+        }
+      }
+
+      // ── CSV / TSV (also handled by spreadsheet block for .xlsx, but CSV goes here) ──
+      if (ext === ".csv" || ext === ".tsv") {
+        const text = new TextDecoder("utf-8", { fatal: false }).decode(buf).trim()
+        if (!text) return apiErr("File appears to be empty")
+        if (text.length > 100_000) return apiErr("File too long (max 100K characters)")
+        result.type = "spreadsheet"
+        result.text = text
+        return json(result)
+      }
+
+      // ── Plain text ────────────────────────────────────────────────────────
+      if (isLikelyBinary(buf) && ext !== ".pdf") {
+        return apiErr("File appears to be binary. Only text-based files are supported.")
       }
       const text = new TextDecoder("utf-8", { fatal: false }).decode(buf).trim()
       if (!text) return apiErr("File appears to be empty")
-      const maxChars = 100_000
-      if (text.length > maxChars) return apiErr(`File text too long (max ${(maxChars / 1000).toFixed(0)}K characters)`)
-      return json({ name, text, size: buf.length })
+      if (text.length > 100_000) return apiErr("File too long (max 100K characters)")
+      result.text = text
+      return json(result)
     } catch (e) {
       logger.error({ e }, "api POST /chat/upload error")
       return apiErr("Upload error", 500)
@@ -533,6 +623,14 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
         if (!match) return addCors(apiErr("Not found", 404), cors)
         const res = await match.handler(req, match.params)
         return addCors(res, cors)
+      }
+
+      // Uploaded files (images, etc.)
+      if (pathname.startsWith("/uploads/")) {
+        const filePath = joinPath(UPLOADS_DIR, pathname.slice(9))
+        const file = Bun.file(filePath)
+        if (await file.exists()) return new Response(file)
+        return addCors(apiErr("Not found", 404), cors)
       }
 
       // Static frontend (built React app)

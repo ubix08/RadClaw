@@ -82,3 +82,13 @@ export interface Settings {
   streamMode: boolean
   userID: string
 }
+
+export type FileType = "text" | "image" | "pdf" | "spreadsheet"
+
+export interface UploadResult {
+  name: string
+  size: number
+  type: FileType
+  text: string
+  url?: string
+}

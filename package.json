@@ -17,8 +17,10 @@
     "@whiskeysockets/baileys": "latest",
     "grammy": "latest",
     "opencode-ai": "1.1.53",
+    "pdf-parse": "^2.4.5",
     "pino": "latest",
-    "qrcode-terminal": "latest"
+    "qrcode-terminal": "latest",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "latest",
