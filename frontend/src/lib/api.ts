@@ -1,4 +1,4 @@
-import type { AdminStatus, BackendSession, HeartbeatStatus, MemoryEntry, MessagePart, ServerConfig, UploadResult, WhitelistData } from "../types"
+import type { AdminStatus, BackendSession, HeartbeatStatus, MemoryEntry, MessagePart, ServerConfig, Source, SourceType, UploadResult, WhitelistData } from "../types"
 
 export class ApiClient {
   private base: string
@@ -205,5 +205,19 @@ export class ApiClient {
 
   async updateConfig(updates: Record<string, string>): Promise<{ config: Record<string, string> }> {
     return this.post("/api/admin/config", { updates }, this.adminKey)
+  }
+
+  // ── sources ────────────────────────────────────────────────────────────────
+
+  async getSources(): Promise<{ sources: Source[] }> {
+    return this.get("/api/sources", this.adminKey)
+  }
+
+  async addSource(data: { type: SourceType; title: string; url?: string; content?: string }): Promise<{ source: Source }> {
+    return this.post("/api/sources", data, this.adminKey)
+  }
+
+  async deleteSource(id: string): Promise<{ removed: boolean }> {
+    return this.del(`/api/sources/${encodeURIComponent(id)}`, this.adminKey)
   }
 }

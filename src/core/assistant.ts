@@ -6,6 +6,7 @@ import type { Logger } from "pino"
 import { MemoryStore } from "../memory/store"
 import { SessionStore } from "./session-store"
 import { ProjectStore } from "../store/projects"
+import { SourceStore } from "../store/sources"
 
 type AssistantInput = {
   channel: "telegram" | "whatsapp" | "system"
@@ -225,7 +226,7 @@ async function loadIdentityFiles(workspaceDir: string, logger: Logger): Promise<
   }
 }
 
-function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbeatIntervalMinutes: number, projects: ProjectStore): string {
+function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbeatIntervalMinutes: number, projects: ProjectStore, sourcesContext?: string): string {
   const active = projects.active()
   const parts: string[] = []
 
@@ -265,6 +266,12 @@ function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbe
   parts.push("After heartbeat summaries are added, if the user should be informed, call send_channel_message.")
   parts.push("send_channel_message delivers to the last used channel/user.")
 
+  // Sources
+  if (sourcesContext) {
+    parts.push("", "## Registered Sources", sourcesContext)
+    parts.push("", "The above sources are available for reference. The user may refer to them by title or type in conversation.")
+  }
+
   // Memory
   parts.push("", "## Memory", memory)
 
@@ -282,15 +289,18 @@ export class AssistantCore {
   private readonly modelConfig?: { providerID: string; modelID: string }
   private readonly opts: AssistantOptions
   private readonly projects: ProjectStore
+  private readonly sources: SourceStore
 
   constructor(
     private readonly logger: Logger,
     private readonly memory: MemoryStore,
     private readonly sessions: SessionStore,
     projects: ProjectStore,
+    sources: SourceStore,
     opts: AssistantOptions,
   ) {
     this.projects = projects
+    this.sources = sources
     this.opts = opts
     this.modelConfig = buildModelConfig(opts.model)
   }
@@ -317,7 +327,7 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects)
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.sources.formatContext())
 
     this.logger.info(
       {
@@ -403,7 +413,7 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects)
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.sources.formatContext())
 
     this.logger.info(
       {
@@ -555,7 +565,7 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects)
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.sources.formatContext())
 
     let recentContext = ""
     try {

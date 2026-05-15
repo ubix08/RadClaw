@@ -5,6 +5,7 @@ import { SessionsPage } from "./pages/SessionsPage"
 import { AdminPage }    from "./pages/AdminPage"
 import { MemoryPage }   from "./pages/MemoryPage"
 import { SettingsPage } from "./pages/SettingsPage"
+import { SourcesPage }  from "./pages/SourcesPage"
 
 export default function App() {
   const { view } = useStore()
@@ -18,6 +19,7 @@ export default function App() {
         {view === "admin"    && <AdminPage />}
         {view === "memory"   && <MemoryPage />}
         {view === "settings" && <SettingsPage />}
+        {view === "sources"  && <SourcesPage />}
       </main>
     </div>
   )

@@ -51,7 +51,7 @@ export interface BackendSession {
   createdAt: number
 }
 
-export type View = "chat" | "sessions" | "admin" | "memory" | "settings"
+export type View = "chat" | "sessions" | "admin" | "memory" | "settings" | "sources"
 
 export interface ServerConfig {
   ENABLE_API: string
@@ -81,6 +81,17 @@ export interface Settings {
   apiAdminKey: string
   streamMode: boolean
   userID: string
+}
+
+export type SourceType = "url" | "youtube" | "image" | "text" | "pdf" | "spreadsheet"
+
+export interface Source {
+  id: string
+  type: SourceType
+  title: string
+  url?: string
+  content: string
+  addedAt: number
 }
 
 export type FileType = "text" | "image" | "pdf" | "spreadsheet"

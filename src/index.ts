@@ -8,6 +8,7 @@ import { SessionStore } from "./core/session-store"
 import { WhitelistStore } from "./core/whitelist-store"
 import { MemoryStore } from "./memory/store"
 import { ProjectStore } from "./store/projects"
+import { SourceStore } from "./store/sources"
 import { startHeartbeat } from "./scheduler/heartbeat"
 import { createLogger } from "./utils/logger"
 import { readJson } from "./utils/fs"
@@ -48,7 +49,8 @@ async function main() {
   const sessions  = new SessionStore(cfg.sessionsFile)
   const whitelist = new WhitelistStore(cfg.whitelistFile)
   const projects  = new ProjectStore(cfg.projectsFile, cfg.radclawHome)
-  const assistant = new AssistantCore(logger, memory, sessions, projects, {
+  const sources   = new SourceStore(cfg.sourcesFile)
+  const assistant = new AssistantCore(logger, memory, sessions, projects, sources, {
     model: cfg.opencodeModel,
     serverUrl: cfg.opencodeServerUrl,
     hostname: cfg.opencodeHostname,
@@ -61,6 +63,7 @@ async function main() {
 
   await assistant.init()
   await whitelist.init()
+  await sources.init()
 
   const heartbeatStatus = await assistant.heartbeatTaskStatus()
   if (heartbeatStatus.empty) {
@@ -93,6 +96,7 @@ async function main() {
       assistant,
       whitelist,
       memory,
+      sources,
       hostname:   cfg.apiHostname,
       port:       cfg.apiPort,
       adminKey:   cfg.apiAdminKey,
@@ -100,6 +104,7 @@ async function main() {
       enableAuth: cfg.apiEnableAuth,
       corsOrigin: cfg.apiCorsOrigin,
       uploadsDir: cfg.uploadsDir,
+      sourcesFile: cfg.sourcesFile,
     }))
     logger.info({ port: cfg.apiPort }, "api channel enabled")
   }

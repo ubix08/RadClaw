@@ -1,4 +1,4 @@
-import { MessageSquare, Settings, Database, LayoutDashboard, X, Zap, Clock } from "lucide-react"
+import { MessageSquare, Settings, Database, LayoutDashboard, X, Zap, Clock, Library } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { useStore } from "../store"
 import type { View } from "../types"
@@ -8,6 +8,7 @@ const NAV: { id: View; label: string; icon: LucideIcon }[] = [
   { id: "sessions", label: "Sessions", icon: Clock },
   { id: "admin",    label: "Admin",    icon: LayoutDashboard },
   { id: "memory",   label: "Memory",   icon: Database },
+  { id: "sources",  label: "Sources",  icon: Library },
   { id: "settings", label: "Settings", icon: Settings },
 ]
 

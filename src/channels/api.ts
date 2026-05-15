@@ -34,6 +34,7 @@ import type { Logger } from "pino"
 import type { AssistantCore } from "../core/assistant"
 import type { WhitelistStore } from "../core/whitelist-store"
 import type { MemoryStore } from "../memory/store"
+import type { SourceStore, SourceType } from "../store/sources"
 import { readEnv, writeEnv } from "../utils/env"
 import { ensureDir, readJson, writeBinary } from "../utils/fs"
 import { dirname, joinPath } from "../utils/path"
@@ -44,6 +45,7 @@ export type ApiAdapterOptions = {
   assistant: AssistantCore
   whitelist: WhitelistStore
   memory: MemoryStore
+  sources: SourceStore
   hostname?: string
   port?: number
   adminKey?: string
@@ -51,6 +53,7 @@ export type ApiAdapterOptions = {
   enableAuth?: boolean
   corsOrigin?: string
   uploadsDir: string
+  sourcesFile: string
 }
 
 // ── tiny router ───────────────────────────────────────────────────────────────
@@ -273,6 +276,16 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
     url?: string
   }
 
+  async function registerSource(result: UploadResult): Promise<void> {
+    const typeMap: Record<string, SourceType> = { pdf: "pdf", image: "image", spreadsheet: "spreadsheet", text: "text" }
+    const st = typeMap[result.type]
+    if (st) {
+      try {
+        await opts.sources.add({ type: st, title: result.name, url: result.url, content: result.text.slice(0, 10_000) })
+      } catch { /* best-effort */ }
+    }
+  }
+
   /** POST /api/chat/upload  → { name, text, type, size, url? } */
   router.add("POST", "/api/chat/upload", async (req) => {
     if (!authChat(req)) return apiErr("Unauthorized", 401)
@@ -289,7 +302,7 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
         return apiErr(`Unsupported file type "${ext}". Allowed: text, markdown, code, PDF, images, CSV, spreadsheets.`)
       }
 
-      const maxSize = ext === ".pdf" ? 10_000_000 : ext === ".xlsx" || ext === ".xls" ? 5_000_000 : 200_000
+      const maxSize = ext === ".pdf" ? 20_000_000 : ext === ".xlsx" || ext === ".xls" ? 10_000_000 : IMAGE_EXTS.has(ext) ? 20_000_000 : 1_000_000
       if (buf.length > maxSize) {
         return apiErr(`File too large (max ${(maxSize / (1024 * 1024)).toFixed(1)} MB)`)
       }
@@ -304,6 +317,7 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
         result.type = "image"
         result.url = `/uploads/${id}`
         result.text = `[Attached Image: ${name}](${result.url})`
+        await registerSource(result)
         return json(result)
       }
 
@@ -318,6 +332,7 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
           if (pdfText.length > 100_000) return apiErr("PDF text too long (max 100K characters)")
           result.type = "pdf"
           result.text = pdfText
+          await registerSource(result)
           return json(result)
         } catch (e) {
           logger.error({ error: e, name }, "PDF parse failed")
@@ -343,6 +358,7 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
           if (text.length > 100_000) return apiErr("Spreadsheet text too long (max 100K characters)")
           result.type = "spreadsheet"
           result.text = text
+          await registerSource(result)
           return json(result)
         } catch (e) {
           logger.error({ error: e, name }, "Spreadsheet parse failed")
@@ -350,13 +366,14 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
         }
       }
 
-      // ── CSV / TSV (also handled by spreadsheet block for .xlsx, but CSV goes here) ──
+      // ── CSV / TSV ─────────────────────────────────────────────────────────
       if (ext === ".csv" || ext === ".tsv") {
         const text = new TextDecoder("utf-8", { fatal: false }).decode(buf).trim()
         if (!text) return apiErr("File appears to be empty")
         if (text.length > 100_000) return apiErr("File too long (max 100K characters)")
         result.type = "spreadsheet"
         result.text = text
+        await registerSource(result)
         return json(result)
       }
 
@@ -368,10 +385,56 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
       if (!text) return apiErr("File appears to be empty")
       if (text.length > 100_000) return apiErr("File too long (max 100K characters)")
       result.text = text
+      await registerSource(result)
       return json(result)
     } catch (e) {
       logger.error({ e }, "api POST /chat/upload error")
       return apiErr("Upload error", 500)
+    }
+  })
+
+  // ── sources ─────────────────────────────────────────────────────────────────
+
+  /** GET /api/sources → { sources: Source[] } */
+  router.add("GET", "/api/sources", async () => {
+    try {
+      return json({ sources: opts.sources.list() })
+    } catch (e) {
+      logger.error({ e }, "api GET /sources error")
+      return apiErr("Internal error", 500)
+    }
+  })
+
+  /** POST /api/sources  body: { type, title, url?, content? }  → { source } */
+  router.add("POST", "/api/sources", async (req) => {
+    if (!authAdmin(req)) return apiErr("Unauthorized", 401)
+    try {
+      const body = await req.json() as { type: SourceType; title: string; url?: string; content?: string }
+      if (!body.type || !body.title) return apiErr("type and title required")
+      const validTypes = ["url", "youtube", "image", "text", "pdf", "spreadsheet"]
+      if (!validTypes.includes(body.type)) return apiErr(`Invalid type. Valid: ${validTypes.join(", ")}`)
+      const source = await opts.sources.add({
+        type: body.type,
+        title: body.title,
+        url: body.url,
+        content: body.content ?? "",
+      })
+      return json({ source })
+    } catch (e) {
+      logger.error({ e }, "api POST /sources error")
+      return apiErr("Internal error", 500)
+    }
+  })
+
+  /** DELETE /api/sources/:id  → { removed: true } */
+  router.add("DELETE", "/api/sources/:id", async (_req, params) => {
+    if (!authAdmin(_req)) return apiErr("Unauthorized", 401)
+    try {
+      await opts.sources.remove(params.id)
+      return json({ removed: true })
+    } catch (e) {
+      logger.error({ e }, "api DELETE /sources error")
+      return apiErr("Internal error", 500)
     }
   })
 

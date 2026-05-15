@@ -307,6 +307,7 @@ export async function ensureScaffold(home: string): Promise<ScaffoldPaths> {
     [paths.whitelistFile, JSON.stringify({ telegram: [], whatsapp: [] }, null, 2)],
     [paths.projectsFile, JSON.stringify({ projects: [], activeName: null }, null, 2)],
     [paths.lastChannelFile, JSON.stringify({ channel: "telegram", userID: "", updatedAt: new Date().toISOString() }, null, 2)],
+    [joinPath(home, "sources.json"), JSON.stringify({ sources: [] }, null, 2)],
   ]
 
   for (const [file, content] of files) {
