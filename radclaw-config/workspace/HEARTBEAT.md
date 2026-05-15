@@ -31,20 +31,29 @@ Write findings to daily log. Notify Rachid if any flag is triggered.
 
 ---
 
-## TASK 002 — MARKET PULSE SCAN
+## TASK 002 — MARKET INTELLIGENCE CYCLE
 **Status:** ACTIVE
 **Trigger:** Every heartbeat cycle
-**Mission:** Keep intelligence fresh, spot opportunities before they peak
+**Mission:** Run full Stage 1 intelligence pipeline — multi-source research, parallel analysis, scored opportunities
 
-Rad spawns a RESEARCHER sub-agent to:
-- Check top sellers in our active niches on Gumroad/Etsy (use search + bestseller filters)
-- Note any new entrants that are gaining traction
-- Note any pricing shifts or new formats appearing
-- Flag any opportunity that scores ≥8 on Idea Scoring Matrix
+Rad spawns @market-intel-orchestrator (blocking task) which internally:
 
-Write findings to daily log `memory/YYYY-MM-DD.md`.
-Add strong opportunities to pipeline.json as IDEA status.
-Notify Rachid only if a high-scoring opportunity is found.
+1. **Fires 4 research delegates in parallel:**
+   - @market-trends — trending products, formats, search velocity
+   - @market-competitor — top sellers, pricing, gaps, whitespace
+   - @market-pain-points — customer frustrations from reviews, forums, social
+   - @market-opportunities — scored product ideas (0-12 matrix)
+
+2. **Collects all results** via delegation_read
+
+3. **Synthesizes** into `.data/market-intel/{YYYY-MM-DD}-report.md`
+
+4. **Promotes** any opportunity scoring ≥8/12 to pipeline.json as IDEA status
+
+Rad reads the orchestrator's result and:
+- Writes key findings to daily log `memory/YYYY-MM-DD.md`
+- Notifies Rachid only if a high-scoring opportunity (≥8) is found
+- Flags if all streams returned thin data (signal drought signal)
 
 ---
 

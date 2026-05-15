@@ -12,6 +12,7 @@ Every sub-agent you spawn serves one of five business functions:
 
 | Function | Purpose |
 |---|---|
+| **MARKET-INTEL** | Multi-source intelligence pipeline orchestrator — parallel research, synthesis, opportunity scoring |
 | **RESEARCHER** | Market scans, competitor analysis, demand validation, keyword research |
 | **VALIDATOR** | Stress-testing ideas, scoring feasibility, identifying risks |
 | **BRIEFER** | Writing product briefs, outlines, listing copy, positioning |

@@ -1,3 +1,4 @@
+import { readdir } from "fs/promises"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { ensureDir, readText, writeText } from "../utils/fs"
 import { basename, dirname, joinPath, relativePath } from "../utils/path"
@@ -26,6 +27,8 @@ export type StreamEvent =
   | { type: "error"; message: string }
   | { type: "done" }
 
+type AgentDescr = { name: string; description: string }
+
 type AssistantOptions = {
   model?: string
   serverUrl?: string
@@ -35,6 +38,7 @@ type AssistantOptions = {
   heartbeatIntervalMinutes: number
   projectsFile: string
   workspaceDir: string
+  agentsDir: string
 }
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>
@@ -226,7 +230,7 @@ async function loadIdentityFiles(workspaceDir: string, logger: Logger): Promise<
   }
 }
 
-function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbeatIntervalMinutes: number, projects: ProjectStore, sourcesContext?: string): string {
+function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbeatIntervalMinutes: number, projects: ProjectStore, agentDescriptions: AgentDescr[], sourcesContext?: string): string {
   const active = projects.active()
   const parts: string[] = []
 
@@ -266,6 +270,16 @@ function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbe
   parts.push("After heartbeat summaries are added, if the user should be informed, call send_channel_message.")
   parts.push("send_channel_message delivers to the last used channel/user.")
 
+  // Custom agents
+  if (agentDescriptions.length > 0) {
+    parts.push("", "## Available Specialist Agents")
+    parts.push("Use `task` (synchronous) or `delegate` (async background) to invoke one for a specialized sub-task.")
+    for (const a of agentDescriptions) {
+      parts.push(`- ${a.name}: ${a.description}`)
+    }
+    parts.push("")
+  }
+
   // Sources
   if (sourcesContext) {
     parts.push("", "## Registered Sources", sourcesContext)
@@ -283,6 +297,33 @@ async function createRuntime(opts: AssistantOptions): Promise<OpencodeRuntime> {
   return { client: createOpencodeClient({ baseUrl: url }) }
 }
 
+function parseAgentDescription(content: string): string {
+  const m = content.match(/^---\n([\s\S]*?)\n---/)
+  if (!m) return ""
+  try {
+    const front = JSON.parse(m[1].replace(/(\w+):/g, '"$1":').replace(/'/g, '"')) as Record<string, unknown>
+    return typeof front.description === "string" ? front.description : ""
+  } catch {
+    return ""
+  }
+}
+
+async function loadAgentDescriptions(dir: string): Promise<AgentDescr[]> {
+  try {
+    const entries = await readdir(dir)
+    const agents: AgentDescr[] = []
+    for (const file of entries) {
+      if (!file.endsWith(".md")) continue
+      const content = await readText(joinPath(dir, file))
+      const description = parseAgentDescription(content)
+      if (description) agents.push({ name: file.replace(/\.md$/, ""), description })
+    }
+    return agents.sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    return []
+  }
+}
+
 export class AssistantCore {
   private runtime?: OpencodeRuntime
   private client?: OpencodeClient
@@ -290,6 +331,7 @@ export class AssistantCore {
   private readonly opts: AssistantOptions
   private readonly projects: ProjectStore
   private readonly sources: SourceStore
+  private agentDescriptions: AgentDescr[] = []
 
   constructor(
     private readonly logger: Logger,
@@ -310,6 +352,10 @@ export class AssistantCore {
     await this.memory.init()
     await this.sessions.init()
     await this.projects.init()
+    this.agentDescriptions = await loadAgentDescriptions(this.opts.agentsDir)
+    if (this.agentDescriptions.length > 0) {
+      this.logger.info({ count: this.agentDescriptions.length, dir: this.opts.agentsDir }, "loaded custom agent descriptions")
+    }
     const discovered = await this.projects.discoverProjects()
     if (discovered > 0) {
       this.logger.info({ count: discovered }, "auto-discovered projects from ~/projects/")
@@ -327,7 +373,7 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.sources.formatContext())
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext())
 
     this.logger.info(
       {
@@ -413,7 +459,7 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.sources.formatContext())
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext())
 
     this.logger.info(
       {
@@ -565,7 +611,7 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.sources.formatContext())
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext())
 
     let recentContext = ""
     try {

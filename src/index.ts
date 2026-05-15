@@ -59,6 +59,7 @@ async function main() {
     heartbeatIntervalMinutes: cfg.heartbeatIntervalMinutes,
     projectsFile: cfg.projectsFile,
     workspaceDir: cfg.workspaceDir,
+    agentsDir: cfg.agentsDir,
   })
 
   await assistant.init()

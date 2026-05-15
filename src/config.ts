@@ -25,6 +25,7 @@ export type AppConfig = {
   outboxDir: string
   uploadsDir: string
   sourcesFile: string
+  agentsDir: string
   // ── API channel ──────────────────────────
   enableApi: boolean
   apiHostname: string
@@ -99,6 +100,7 @@ export async function loadConfig(): Promise<AppConfig> {
     outboxDir: resolvePath(home, "outbox"),
     uploadsDir: resolvePath(home, "uploads"),
     sourcesFile: resolvePath(home, "sources.json"),
+    agentsDir: resolvePath(home, ".opencode", "agents"),
     // ── API channel ──────────────────────────
     enableApi: envBool(Bun.env.ENABLE_API, true),
     apiHostname: Bun.env.API_HOSTNAME ?? "0.0.0.0",

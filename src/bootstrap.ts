@@ -23,6 +23,7 @@ export type ScaffoldPaths = {
   lastChannelFile: string
   outboxDir: string
   whatsappAuthDir: string
+  agentsDir: string
 }
 
 export function resolvePaths(home: string): ScaffoldPaths {
@@ -44,6 +45,7 @@ export function resolvePaths(home: string): ScaffoldPaths {
     lastChannelFile: joinPath(home, "last-channel.json"),
     outboxDir: joinPath(home, "outbox"),
     whatsappAuthDir: joinPath(home, "whatsapp-auth"),
+    agentsDir: joinPath(home, ".opencode", "agents"),
   }
 }
 
@@ -124,6 +126,9 @@ Deleting files/projects/config, destructive sub-agent scope, unclear blast radiu
 
 ### Task Prompt Requirements
 Every task prompt MUST include: Task (clear description), Context (concision is critical), Expected Output, Verification.
+
+### Custom Agents
+Rad ships with specialized sub-agents defined in ~/.radclaw/.opencode/agents/. Each .md file defines an agent with a system prompt and permissions. Use 'task' (synchronous) or 'delegate' (async background) to invoke them by name. The full list with descriptions is available in the "Available Specialist Agents" section of the system prompt.
 
 ### Skills
 Skills are installed globally on the OpenCode server and available to all agents via the native skill tool. When a sub-agent needs specialized instructions:
@@ -292,6 +297,7 @@ export async function ensureScaffold(home: string): Promise<ScaffoldPaths> {
   await mkdir(paths.workspace, { recursive: true })
   await mkdir(paths.memoryDir, { recursive: true })
   await mkdir(paths.outboxDir, { recursive: true })
+  await mkdir(paths.agentsDir, { recursive: true })
   await mkdir(projectsDir, { recursive: true })
   await mkdir(joinPath(home, "uploads"), { recursive: true })
 
