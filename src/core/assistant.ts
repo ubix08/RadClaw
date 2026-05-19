@@ -39,6 +39,7 @@ type AssistantOptions = {
   projectsFile: string
   workspaceDir: string
   agentsDir: string
+  getTaskBoardSummary?: () => string
 }
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>
@@ -60,6 +61,24 @@ function sdkSessionPrompt(
   },
 ): Promise<unknown> {
   return client.session.prompt({ path, body } as never)
+}
+
+function sdkSessionPromptAsync(
+  client: OpencodeClient,
+  path: { id: string },
+  body: {
+    noReply?: boolean
+    system?: string
+    parts: Array<{ type: string; text: string }>
+    model?: { providerID: string; modelID: string }
+  },
+): Promise<unknown> {
+  return client.session.promptAsync({ path, body } as never)
+}
+
+async function sdkEventSubscribe(client: OpencodeClient, signal: AbortSignal): Promise<{ stream: AsyncIterable<unknown> }> {
+  const result = await (client.event.subscribe({ signal } as never) as Promise<unknown>)
+  return result as { stream: AsyncIterable<unknown> }
 }
 
 function sdkSessionMessages(client: OpencodeClient, path: { id: string }): Promise<unknown> {
@@ -230,7 +249,7 @@ async function loadIdentityFiles(workspaceDir: string, logger: Logger): Promise<
   }
 }
 
-function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbeatIntervalMinutes: number, projects: ProjectStore, agentDescriptions: AgentDescr[], sourcesContext?: string): string {
+function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbeatIntervalMinutes: number, projects: ProjectStore, agentDescriptions: AgentDescr[], sourcesContext?: string, taskBoardSummary?: string): string {
   const active = projects.active()
   const parts: string[] = []
 
@@ -284,6 +303,15 @@ function buildAgentSystemPrompt(identity: IdentityFiles, memory: string, heartbe
   if (sourcesContext) {
     parts.push("", "## Registered Sources", sourcesContext)
     parts.push("", "The above sources are available for reference. The user may refer to them by title or type in conversation.")
+  }
+
+  // Active task board
+  if (taskBoardSummary) {
+    parts.push("", "## Active Task Board")
+    parts.push("This is ground truth for what's currently running or queued:")
+    parts.push(taskBoardSummary)
+    parts.push("")
+    parts.push("Consult this before answering questions about task status. If the user asks about progress on something that's running, reference the task board.")
   }
 
   // Memory
@@ -373,7 +401,8 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext())
+    const taskBoardSummary = this.opts.getTaskBoardSummary?.()
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext(), taskBoardSummary)
 
     this.logger.info(
       {
@@ -459,7 +488,8 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext())
+    const taskBoardSummary = this.opts.getTaskBoardSummary?.()
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext(), taskBoardSummary)
 
     this.logger.info(
       {
@@ -472,9 +502,14 @@ export class AssistantCore {
       "assistant stream request started",
     )
 
-    let response: unknown
+    const abortCtrl = new AbortController()
+    let eventIter: AsyncIterable<unknown> | null = null
+
     try {
-      response = await sdkSessionPrompt(client, { id: sessionID }, {
+      const sub = await sdkEventSubscribe(client, abortCtrl.signal)
+      eventIter = sub.stream
+
+      await sdkSessionPromptAsync(client, { id: sessionID }, {
         noReply: false,
         system: systemPrompt,
         parts: [{ type: "text", text: input.text }],
@@ -482,53 +517,58 @@ export class AssistantCore {
       })
     } catch (error) {
       this.logger.error({ error, sessionID }, "assistant stream prompt call failed")
+      abortCtrl.abort()
       yield { type: "error", message: (error as Error).message }
       return
     }
 
-    const payload = unwrap<Record<string, unknown>>(response)
-    const parts = payload.parts
-
     let gotContent = false
-    if (parts && typeof parts === "object" && Symbol.asyncIterator in parts) {
+    if (eventIter) {
       try {
-        for await (const part of parts as AsyncIterable<Record<string, unknown>>) {
-          const ptype = part?.type
-          if (typeof ptype === "string") {
+        for await (const raw of eventIter) {
+          const ev = raw as { type: string; properties?: Record<string, unknown> } | undefined
+          if (!ev?.type) continue
+          const props = ev.properties
+          if (!props) continue
+          if (props.sessionID !== sessionID) continue
+
+          if (ev.type === "message.part.updated") {
+            const part = props.part as Record<string, unknown> | undefined
+            if (!part) continue
+            const ptype = part.type
             if (ptype === "text" || ptype === "thinking" || ptype === "tool_use" || ptype === "tool_result") {
               gotContent = true
               yield part as unknown as StreamEvent
-            } else if (part?.text) {
+            } else if (typeof part.text === "string" && part.text.length > 0) {
               gotContent = true
-              yield { type: "text", text: part.text as string } as StreamEvent
+              yield { type: "text", text: part.text as string }
             }
+          } else if (ev.type === "message.updated") {
+            break
           }
         }
       } catch (e) {
-        this.logger.error({ error: e, sessionID }, "assistant stream part iteration error")
-        yield { type: "error", message: (e as Error).message }
-        return
+        if ((e as Error)?.name !== "AbortError") {
+          this.logger.error({ error: e, sessionID }, "assistant stream event error")
+        }
+      } finally {
+        abortCtrl.abort()
       }
     }
 
     if (!gotContent) {
-      const text = await extractPromptText(response)
-      if (text && text !== "I could not parse the assistant response.") {
-        yield { type: "text", text }
+      this.logger.warn({ sessionID }, "assistant stream got no events; polling messages")
+      let beforeAssistantSig = ""
+      try {
+        const beforeMessagesResult = await sdkSessionMessages(client, { id: sessionID })
+        beforeAssistantSig = assistantSignature(latestAssistantMessage(toMessages(beforeMessagesResult)))
+      } catch { /* ignore */ }
+      const waitedReply = await this.waitForAssistantReply(sessionID, beforeAssistantSig)
+      if (waitedReply) {
+        yield { type: "text", text: waitedReply }
       } else {
-        this.logger.warn({ sessionID }, "assistant stream response parse failed; polling messages")
-        let beforeAssistantSig = ""
-        try {
-          const beforeMessagesResult = await sdkSessionMessages(client, { id: sessionID })
-          beforeAssistantSig = assistantSignature(latestAssistantMessage(toMessages(beforeMessagesResult)))
-        } catch { /* ignore */ }
-        const waitedReply = await this.waitForAssistantReply(sessionID, beforeAssistantSig)
-        if (waitedReply) {
-          yield { type: "text", text: waitedReply }
-        } else {
-          yield { type: "error", message: "I did not receive a model reply in time. Please check OpenCode provider auth/model setup." }
-          return
-        }
+        yield { type: "error", message: "I did not receive a model reply in time. Please check OpenCode provider auth/model setup." }
+        return
       }
     }
 
@@ -611,7 +651,8 @@ export class AssistantCore {
 
     const memoryContext = await this.memory.readAll()
     const identity = await loadIdentityFiles(this.opts.workspaceDir, this.logger)
-    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext())
+    const taskBoardSummary = this.opts.getTaskBoardSummary?.()
+    const systemPrompt = buildAgentSystemPrompt(identity, memoryContext, this.opts.heartbeatIntervalMinutes, this.projects, this.agentDescriptions, this.sources.formatContext(), taskBoardSummary)
 
     let recentContext = ""
     try {

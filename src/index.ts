@@ -12,6 +12,7 @@ import { SourceStore } from "./store/sources"
 import { startHeartbeat } from "./scheduler/heartbeat"
 import { createLogger } from "./utils/logger"
 import { readJson } from "./utils/fs"
+import { TaskTracker } from "./orchestrator/task-tracker"
 
 import { defaultRadclawHome } from "./bootstrap"
 process.env.OPENCODE_CONFIG_DIR ??= defaultRadclawHome()
@@ -50,6 +51,7 @@ async function main() {
   const whitelist = new WhitelistStore(cfg.whitelistFile)
   const projects  = new ProjectStore(cfg.projectsFile, cfg.radclawHome)
   const sources   = new SourceStore(cfg.sourcesFile)
+  const taskTracker = new TaskTracker(cfg.workflowDb)
   const assistant = new AssistantCore(logger, memory, sessions, projects, sources, {
     model: cfg.opencodeModel,
     serverUrl: cfg.opencodeServerUrl,
@@ -60,6 +62,14 @@ async function main() {
     projectsFile: cfg.projectsFile,
     workspaceDir: cfg.workspaceDir,
     agentsDir: cfg.agentsDir,
+    getTaskBoardSummary: () => {
+      const s = taskTracker.summary()
+      const c = taskTracker.activeCount()
+      const lines = s.map((a: { agent: string; pending: number; in_progress: number; completed: number }) =>
+        `  ${a.agent}: ${a.in_progress} active, ${a.pending} pending, ${a.completed} completed`
+      )
+      return c > 0 ? `Active tasks: ${c}\n${lines.join("\n")}` : "No active tasks."
+    },
   })
 
   await assistant.init()
@@ -106,6 +116,7 @@ async function main() {
       corsOrigin: cfg.apiCorsOrigin,
       uploadsDir: cfg.uploadsDir,
       sourcesFile: cfg.sourcesFile,
+      taskTracker,
     }))
     logger.info({ port: cfg.apiPort }, "api channel enabled")
   }

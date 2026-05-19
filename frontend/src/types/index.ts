@@ -51,7 +51,7 @@ export interface BackendSession {
   createdAt: number
 }
 
-export type View = "chat" | "sessions" | "admin" | "memory" | "settings" | "sources"
+export type View = "chat" | "sessions" | "admin" | "memory" | "settings" | "sources" | "dashboard"
 
 export interface ServerConfig {
   ENABLE_API: string
@@ -102,4 +102,23 @@ export interface UploadResult {
   type: FileType
   text: string
   url?: string
+}
+
+export interface TaskRecord {
+  id: string
+  agent_name: string
+  title: string
+  parent_task_id: string | null
+  status: "pending" | "in_progress" | "completed" | "failed"
+  assigned_at: number
+  completed_at: number | null
+  output_path: string | null
+  summary: string | null
+}
+
+export interface TaskSummary {
+  agent: string
+  pending: number
+  in_progress: number
+  completed: number
 }

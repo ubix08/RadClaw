@@ -220,4 +220,19 @@ export class ApiClient {
   async deleteSource(id: string): Promise<{ removed: boolean }> {
     return this.del(`/api/sources/${encodeURIComponent(id)}`, this.adminKey)
   }
+
+  // ── workflow ─────────────────────────────────────────────────────────────
+
+  async getWorkflowTasks(status?: string): Promise<{ tasks: import("../types").TaskRecord[] }> {
+    const path = status ? `/api/workflow/tasks/${status}` : "/api/workflow/tasks"
+    return this.get(path, this.adminKey)
+  }
+
+  async getWorkflowSummary(): Promise<{ summary: import("../types").TaskSummary[]; activeCount: number }> {
+    return this.get("/api/workflow/summary", this.adminKey)
+  }
+
+  async getWorkflowTask(id: string): Promise<{ task: import("../types").TaskRecord }> {
+    return this.get(`/api/workflow/task/${encodeURIComponent(id)}`, this.adminKey)
+  }
 }

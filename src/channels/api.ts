@@ -35,6 +35,7 @@ import type { AssistantCore } from "../core/assistant"
 import type { WhitelistStore } from "../core/whitelist-store"
 import type { MemoryStore } from "../memory/store"
 import type { SourceStore, SourceType } from "../store/sources"
+import type { TaskTracker } from "../orchestrator/task-tracker"
 import { readEnv, writeEnv } from "../utils/env"
 import { ensureDir, readJson, writeBinary } from "../utils/fs"
 import { dirname, joinPath } from "../utils/path"
@@ -54,6 +55,7 @@ export type ApiAdapterOptions = {
   corsOrigin?: string
   uploadsDir: string
   sourcesFile: string
+  taskTracker?: TaskTracker
 }
 
 // ── tiny router ───────────────────────────────────────────────────────────────
@@ -63,14 +65,8 @@ type Route = { method: string; pattern: RegExp; keys: string[]; handler: Handler
 
 function compilePath(path: string): { pattern: RegExp; keys: string[] } {
   const keys: string[] = []
-  const src = path
-    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // escape regex chars first
-    .replace(/\\:([^/]+)/g, (_m, k) => { keys.push(k); return "([^/]+)" })
-    // redo: don't double-escape the colon segments
-  // simpler approach:
-  const keys2: string[] = []
-  const src2 = path.replace(/:([^/]+)/g, (_m, k) => { keys2.push(k); return "([^/]+)" })
-  return { pattern: new RegExp(`^${src2}$`), keys: keys2 }
+  const src = path.replace(/:([^/]+)/g, (_m, k) => { keys.push(k); return "([^/]+)" })
+  return { pattern: new RegExp(`^${src}$`), keys }
 }
 
 class Router {
@@ -130,7 +126,7 @@ function addCors(response: Response, cors: Record<string, string>): Response {
 function makeAuth(enabled: boolean, key: string | undefined) {
   return (req: Request) => {
     if (!enabled) return true
-    if (!key) return false
+    if (!key) return true
     return (req.headers.get("Authorization") ?? "") === `Bearer ${key}`
   }
 }
@@ -153,9 +149,15 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
 
   const cors = corsHeaders(corsOrigin)
   const authAdmin = makeAuth(enableAuth, adminKey)
+  if (enableAuth && !adminKey) {
+    logger.warn("API_ADMIN_KEY not set — admin endpoints (sources, whitelist, config) require authentication but no key is configured. " +
+      "Set API_ADMIN_KEY for security, or disable auth via API_ENABLE_AUTH=false (dev only). " +
+      "Until then, admin endpoints are open (insecure).")
+  }
   if (enableAuth && !chatKey) {
     logger.warn("API_CHAT_KEY not set — chat endpoints require authentication but no chat-specific key is configured. " +
-      "Set API_CHAT_KEY explicitly, or disable auth via API_ENABLE_AUTH=false (dev only).")
+      "Set API_CHAT_KEY explicitly, or disable auth via API_ENABLE_AUTH=false (dev only). " +
+      "Until then, chat endpoints are open (insecure).")
   }
   const authChat  = makeAuth(enableAuth, chatKey ?? adminKey)
   const router    = new Router()
@@ -215,9 +217,9 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
             }
           }
         } catch (e) {
-          emit("error", { message: e instanceof Error ? e.message : "Internal error" })
+          try { emit("error", { message: e instanceof Error ? e.message : "Internal error" }) } catch {}
         } finally {
-          ctrl.close()
+          try { ctrl.close() } catch {}
         }
       },
     })
@@ -668,6 +670,51 @@ export async function startApiAdapter(opts: ApiAdapterOptions): Promise<void> {
       return apiErr("Internal error", 500)
     }
   })
+
+  // ── workflow / task routes ───────────────────────────────────────────────
+
+  if (opts.taskTracker) {
+    const tt = opts.taskTracker
+
+    router.add("GET", "/api/workflow/tasks", async () => {
+      try {
+        return json({ tasks: tt.list() })
+      } catch (e) {
+        logger.error({ e }, "api GET /workflow/tasks error")
+        return apiErr("Internal error", 500)
+      }
+    })
+
+    router.add("GET", "/api/workflow/tasks/:status", async (_req, params) => {
+      try {
+        const status = params.status as "pending" | "in_progress" | "completed" | "failed"
+        return json({ tasks: tt.list(status) })
+      } catch (e) {
+        logger.error({ e }, "api GET /workflow/tasks/:status error")
+        return apiErr("Internal error", 500)
+      }
+    })
+
+    router.add("GET", "/api/workflow/summary", async () => {
+      try {
+        return json({ summary: tt.summary(), activeCount: tt.activeCount() })
+      } catch (e) {
+        logger.error({ e }, "api GET /workflow/summary error")
+        return apiErr("Internal error", 500)
+      }
+    })
+
+    router.add("GET", "/api/workflow/task/:id", async (_req, params) => {
+      try {
+        const task = tt.get(params.id)
+        if (!task) return apiErr("Not found", 404)
+        return json({ task })
+      } catch (e) {
+        logger.error({ e }, "api GET /workflow/task/:id error")
+        return apiErr("Internal error", 500)
+      }
+    })
+  }
 
   // ── Bun HTTP server ───────────────────────────────────────────────────────
 

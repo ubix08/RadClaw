@@ -16,6 +16,7 @@
     "@opencode-ai/sdk": "1.1.53",
     "@whiskeysockets/baileys": "latest",
     "grammy": "latest",
+    "js-yaml": "^4.1.1",
     "opencode-ai": "1.1.53",
     "pdf-parse": "^2.4.5",
     "pino": "latest",
@@ -23,6 +24,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "latest",
     "@types/qrcode-terminal": "latest",
     "bun-types": "^1.3.14",
